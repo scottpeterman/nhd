@@ -1,7 +1,7 @@
 # nethuds desktop (nhd) — proof of concept
 
 <p align="center">
-  <img src="screenshots/slides.gif"
+  <img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/slides.gif"
        alt="nethuds desktop cycling through the Arista, Juniper, Cisco IOS and Linux HUDs"
        width="100%">
 </p>
@@ -30,8 +30,8 @@ state that persists across restarts — all without rewriting the
 
 <table>
   <tr>
-    <td width="50%"><img src="screenshots/arista.png" alt="Arista EOS HUD" width="100%"></td>
-    <td width="50%"><img src="screenshots/juniper.png" alt="Juniper Junos HUD" width="100%"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/arista.png" alt="Arista EOS HUD" width="100%"></td>
+    <td width="50%"><img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/juniper.png" alt="Juniper Junos HUD" width="100%"></td>
   </tr>
   <tr>
     <td align="center"><em>Arista EOS — compute, thermal matrix, power &amp; cooling, transceiver inventory</em></td>
@@ -63,7 +63,7 @@ rather than a tool are now done: **CRUD session editing with persistence, an
 encrypted credential vault, and key-capable auth wired into the login path.**
 
 <p align="center">
-  <img src="screenshots/cisco.png"
+  <img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/cisco.png"
        alt="Cisco IOS HUD — ENG-LEAF-1 with LLDP topology, spanning tree, MAC and routing tables"
        width="100%">
   <br>
@@ -92,7 +92,7 @@ that port is enough. If the preferred vendor port is taken, the wrapper walks
 forward to the next free one.
 
 <p align="center">
-  <img src="screenshots/linux.png"
+  <img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/linux.png"
        alt="Linux HUD with an embedded terminal running btop over the same SSH session"
        width="100%">
   <br>
@@ -133,7 +133,7 @@ server's `status: error` response (see Authentication below).
 ### Process model: shared vs dedicated
 
 <p align="center">
-  <img src="screenshots/ubuntu.png"
+  <img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/ubuntu.png"
        alt="The full Linux HUD cockpit — systemd services, Docker, interfaces, routing and thermals"
        width="100%">
   <br>
@@ -329,7 +329,7 @@ rounding to the nearest integer. On macOS Retina (integer 2×) none of this is
 needed; it's there for the mixed-DPI desktops the tool also runs on.
 
 ## Layout
-![img.png](img.png)
+![Layout — session tree, tabs, HUD](https://raw.githubusercontent.com/scottpeterman/nhd/main/img.png)
 ```
 nhd/
 ├── app.py             # PyQt6 main window, editable tree, tabs, connect flow,
