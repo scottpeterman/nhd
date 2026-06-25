@@ -1,0 +1,19 @@
+device:
+  host: "10.1.1.1"
+  username: "network"
+  device_type: "cisco_ios"
+  use_keys: false
+  key_file: "~/.ssh/id_rsa"
+  timeout: 30
+  session_timeout: 60
+  password: ""
+  # secret: "enable_secret"
+  legacy_ssh: true
+
+poll_interval: 15
+
+server:
+  host: "0.0.0.0"
+  port: 8472
+#  ssl_certfile: /app/certs/cert.pem
+#  ssl_keyfile: /app/certs/key.pem

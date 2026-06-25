@@ -1,0 +1,1342 @@
+<!DOCTYPE html>
+  <html lang="en" data-theme="green">
+  <head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Arista HUD</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+  <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+  <style>
+    /* ============================================================
+       THEME SYSTEM — all color via CSS custom properties
+       Toggle data-theme="green" | "amber" on <html>
+       ============================================================ */
+
+    /* --- GREEN (default) --- */
+    [data-theme="green"] {
+      --pri:    #00ff41; --pri2:   #00cc33; --pri3:   #009922;
+      --dim:    #004d15; --dimmer: #002a0a;
+      --red:    #ff3333; --warn:   #ffaa00; --cyan:   #00ddff;
+      --bg:     #080a08; --bg2:    #0e120eee;
+      --scan:   rgba(0,255,65,0.012);
+      --glow:   0 0 4px #00ff41;
+      --glow-warn: 0 0 4px #ffaa00;
+      --glow-err:  0 0 4px #ff3333;
+      --radar-fill-start: rgba(0,255,65,0.05);
+      --radar-ring: rgba(0,255,65,0.13);
+      --edge-color: #00ddff;
+      --edge-link:  rgba(0,221,255,.27);
+      --edge-text:  rgba(0,221,255,.53);
+      --leaf-stroke: #00cc33;
+      --leaf-link:   rgba(0,255,65,.13);
+    }
+
+    /* --- AMBER (night mode) --- */
+    [data-theme="amber"] {
+      --pri:    #ff9500; --pri2:   #e07800; --pri3:   #a85800;
+      --dim:    #5a3200; --dimmer: #2e1a00;
+      --red:    #ff4444; --warn:   #ffcc00; --cyan:   #ffcc66;
+      --bg:     #0a0800; --bg2:    #12100aee;
+      --scan:   rgba(255,149,0,0.010);
+      --glow:   0 0 4px #ff9500;
+      --glow-warn: 0 0 4px #ffcc00;
+      --glow-err:  0 0 4px #ff4444;
+      --radar-fill-start: rgba(255,149,0,0.05);
+      --radar-ring: rgba(255,149,0,0.13);
+      --edge-color: #ffcc66;
+      --edge-link:  rgba(255,204,102,.27);
+      --edge-text:  rgba(255,204,102,.53);
+      --leaf-stroke: #e07800;
+      --leaf-link:   rgba(255,149,0,.13);
+    }
+
+    /* ============================================================
+       BASE STYLES
+       ============================================================ */
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: var(--bg); color: var(--pri);
+      font-family: 'Courier New', 'Lucida Console', monospace;
+      font-size: 10px; overflow-x: hidden;
+    }
+
+    /* CRT scanline overlay */
+    body::after {
+      content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan) 2px, var(--scan) 4px);
+    }
+
+    /* ============================================================
+       ANIMATIONS
+       ============================================================ */
+    @keyframes pulse  { 0%,100%{opacity:.6} 50%{opacity:1} }
+    @keyframes blink  { 0%,100%{opacity:1} 50%{opacity:.15} }
+    @keyframes radarSweep { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+    @keyframes fadeIn { from{opacity:0;transform:translateY(3px)} to{opacity:1;transform:translateY(0)} }
+
+    /* ============================================================
+       LAYOUT
+       ============================================================ */
+    .shell { padding: 6px; min-height: 100vh; }
+
+    .header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid color-mix(in srgb, var(--pri3) 27%, transparent);
+      padding-bottom: 5px; margin-bottom: 6px; flex-wrap: wrap; gap: 4px;
+    }
+    .hostname { font-size: 15px; letter-spacing: 3px; font-weight: bold; color: var(--pri); }
+    .hdim { color: var(--dim); font-size: 8px; margin-left: 8px; }
+    .hsub { color: var(--pri3); font-size: 8px; margin-left: 8px; }
+
+    .grid { display: grid; grid-template-columns: 1.1fr 280px 1fr; gap: 6px; }
+    @media (max-width: 1200px) { .grid { grid-template-columns: 1fr 260px 1fr; } }
+    @media (max-width: 900px)  { .grid { grid-template-columns: 1fr; } }
+
+    .col { display: flex; flex-direction: column; gap: 6px; }
+
+    /* ============================================================
+       PANELS
+       ============================================================ */
+    .panel {
+      border: 1px solid var(--pri3); background: var(--bg2); position: relative;
+    }
+    .panel.alert   { border-color: var(--red); }
+    .panel.warning { border-color: var(--warn); }
+
+    .panel-title {
+      font-size: 9px; letter-spacing: 2px; text-transform: uppercase;
+      padding: 4px 8px 3px;
+      border-bottom: 1px solid color-mix(in srgb, var(--pri3) 27%, transparent);
+      color: var(--pri);
+      background: color-mix(in srgb, var(--pri3) 3%, transparent);
+    }
+    .panel.alert .panel-title {
+      color: var(--red);
+      background: rgba(255,51,51,.04);
+      border-bottom-color: rgba(255,51,51,.15);
+    }
+    .panel.warning .panel-title {
+      color: var(--warn);
+      background: color-mix(in srgb, var(--warn) 4%, transparent);
+      border-bottom-color: color-mix(in srgb, var(--warn) 15%, transparent);
+    }
+    .panel-body { padding: 4px 8px 6px; }
+
+    /* Corner brackets */
+    .panel::before, .panel::after {
+      content: ''; position: absolute; width: 10px; height: 10px; pointer-events: none;
+    }
+    .panel::before { top: -1px; left: -1px; border-top: 1.5px solid var(--pri3); border-left: 1.5px solid var(--pri3); }
+    .panel::after  { top: -1px; right: -1px; border-top: 1.5px solid var(--pri3); border-right: 1.5px solid var(--pri3); }
+    .panel.alert::before,   .panel.alert::after   { border-color: var(--red); }
+    .panel.warning::before, .panel.warning::after  { border-color: var(--warn); }
+
+    /* ============================================================
+       COMPONENTS
+       ============================================================ */
+    .lbl { color: var(--pri3); font-size: 8px; letter-spacing: 1px; }
+    .val { font-weight: bold; }
+
+    .dot { display: inline-block; width: 5px; height: 5px; border-radius: 50%; margin-right: 3px; vertical-align: middle; }
+    .dot-ok  { background: var(--pri); box-shadow: var(--glow); }
+    .dot-err { background: var(--red); box-shadow: var(--glow-err); }
+    .dot-blink { animation: blink .8s infinite; }
+
+    .therm-cell {
+      display: inline-block; width: 14px; height: 14px; border-radius: 1px;
+      position: relative; font-size: 6px; text-align: center; line-height: 14px;
+      margin: 0 1px 1px 0; cursor: default;
+    }
+    .therm-cell:hover { outline: 1px solid var(--pri); z-index: 1; }
+
+    .tbl { width: 100%; border-collapse: collapse; font-size: 8px; }
+    .tbl th { text-align: left; padding: 2px 3px; color: var(--pri3); border-bottom: 1px solid var(--dimmer); font-weight: normal; }
+    .tbl td { padding: 2px 3px; }
+    .tbl .r { text-align: right; }
+    .tbl .c { text-align: center; }
+
+    .bar-track {
+      display: inline-block; height: 5px; background: var(--dimmer);
+      border: 1px solid color-mix(in srgb, var(--pri3) 13%, transparent);
+      position: relative; vertical-align: middle;
+    }
+    .bar-fill { position: absolute; left: 0; top: 0; height: 100%; transition: width .5s; }
+
+    .log-entry { display: flex; gap: 4px; padding: 2px 0; border-bottom: 1px solid color-mix(in srgb, var(--dimmer) 13%, transparent); font-size: 7px; }
+    .log-ts  { color: color-mix(in srgb, var(--pri3) 53%, transparent); min-width: 72px; white-space: nowrap; }
+    .log-sev { min-width: 28px; }
+
+    .tab {
+      cursor: pointer; font-size: 8px; letter-spacing: 1px;
+      padding-bottom: 1px; border-bottom: 1px solid transparent;
+      margin-right: 6px; text-transform: uppercase; color: var(--pri3);
+    }
+    .tab.active { color: var(--pri); border-bottom-color: var(--pri); }
+
+    .scroll { overflow-y: auto; }
+    .scroll::-webkit-scrollbar { width: 4px; }
+    .scroll::-webkit-scrollbar-track { background: var(--bg); }
+    .scroll::-webkit-scrollbar-thumb { background: var(--pri3); }
+
+    /* Global + terminal scrollbar theming */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--bg); }
+    ::-webkit-scrollbar-thumb { background: var(--pri3); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--pri2); }
+    ::-webkit-scrollbar-corner { background: var(--bg); }
+    .xterm-viewport::-webkit-scrollbar { width: 6px; }
+    .xterm-viewport::-webkit-scrollbar-track { background: var(--bg); }
+    .xterm-viewport::-webkit-scrollbar-thumb { background: var(--pri3); border-radius: 3px; }
+    .xterm-viewport::-webkit-scrollbar-thumb:hover { background: var(--pri2); }
+
+    .footer {
+      display: flex; justify-content: space-between; align-items: center;
+      border-top: 1px solid color-mix(in srgb, var(--pri3) 20%, transparent);
+      margin-top: 6px; padding-top: 4px; font-size: 7px; color: var(--pri3);
+      flex-wrap: wrap; gap: 4px;
+    }
+
+    .conn-banner {
+      text-align: center; padding: 12px; font-size: 11px; letter-spacing: 2px;
+      border: 1px solid var(--warn); color: var(--warn); margin: 20px;
+      animation: pulse 2s infinite;
+    }
+
+    .row   { display: flex; justify-content: space-between; align-items: center; padding: 1px 0; }
+    .row-b { border-bottom: 1px solid color-mix(in srgb, var(--dimmer) 13%, transparent); }
+    .flex-wrap { display: flex; flex-wrap: wrap; gap: 1px; }
+
+    .alert-box {
+      margin-top: 4px; padding: 3px 4px; font-size: 8px;
+      background: color-mix(in srgb, var(--warn) 7%, transparent);
+      border: 1px solid color-mix(in srgb, var(--warn) 20%, transparent);
+    }
+
+    .port-slot {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 18px; height: 14px; margin: 1px; font-size: 6px;
+      border-radius: 1px; cursor: default; border: 1px solid var(--dimmer);
+    }
+    .port-slot.active { border-color: var(--pri2); background: color-mix(in srgb, var(--pri) 12%, transparent); color: var(--pri); }
+    .port-slot.empty  { border-color: var(--dimmer); background: color-mix(in srgb, var(--dimmer) 15%, transparent); color: var(--dimmer); }
+    .port-slot:hover  { outline: 1px solid var(--pri3); z-index: 1; }
+
+    /* ============================================================
+       THEME TOGGLE
+       ============================================================ */
+    .theme-toggle {
+      cursor: pointer; font-size: 9px; letter-spacing: 1px;
+      padding: 3px 10px; border: 1px solid var(--pri2);
+      background: color-mix(in srgb, var(--pri) 6%, transparent); color: var(--pri2);
+      text-transform: uppercase; font-family: inherit;
+      transition: color .3s, border-color .3s, background .3s;
+    }
+    .theme-toggle:hover { color: var(--pri); border-color: var(--pri); background: color-mix(in srgb, var(--pri) 12%, transparent); }
+
+    /* ============================================================
+       TERMINAL FAB + OVERLAY
+       ============================================================ */
+    .term-fab {
+      position: fixed; bottom: 20px; right: 20px; z-index: 900;
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--bg2); border: 1.5px solid var(--pri3);
+      cursor: pointer; display: flex; align-items: center; justify-content: center;
+      transition: border-color .3s, box-shadow .3s;
+    }
+    .term-fab:hover { border-color: var(--pri); box-shadow: 0 0 12px color-mix(in srgb, var(--pri) 30%, transparent); }
+    .term-fab svg { width: 20px; height: 20px; fill: none; stroke: var(--pri3); stroke-width: 1.5; transition: stroke .3s; }
+    .term-fab:hover svg { stroke: var(--pri); }
+    .term-fab.active { border-color: var(--pri); }
+    .term-fab.active svg { stroke: var(--pri); }
+
+    .term-overlay {
+      display: none; position: fixed; top: 60px; left: 10%; width: 80%; height: calc(100vh - 140px);
+      z-index: 950; background: var(--bg); border: 1px solid var(--pri3);
+      flex-direction: column; box-shadow: 0 0 30px rgba(0,0,0,.8);
+      resize: both; overflow: hidden; min-width: 400px; min-height: 200px;
+    }
+    .term-overlay.open { display: flex; }
+    .term-overlay::-webkit-resizer { background: var(--pri3); }
+    .term-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 4px 10px; border-bottom: 1px solid var(--pri3);
+      font-size: 9px; letter-spacing: 2px; color: var(--pri);
+      background: color-mix(in srgb, var(--pri3) 3%, transparent);
+      cursor: move; user-select: none;
+    }
+    .term-header span { display: flex; align-items: center; gap: 6px; }
+    .term-btn {
+      cursor: pointer; font-size: 8px; letter-spacing: 1px;
+      padding: 2px 8px; border: 1px solid var(--pri3);
+      background: transparent; color: var(--pri3);
+      text-transform: uppercase; font-family: inherit;
+    }
+    .term-btn:hover { color: var(--pri); border-color: var(--pri); }
+    .term-body { flex: 1; overflow: hidden; padding: 4px; }
+    .term-status {
+      padding: 2px 10px; font-size: 7px; color: var(--pri3);
+      border-top: 1px solid color-mix(in srgb, var(--pri3) 15%, transparent);
+      text-transform: uppercase; letter-spacing: 1px;
+    }
+
+    /* Loading overlay */
+    .load-overlay {
+      position: fixed; inset: 0; z-index: 500; background: var(--bg);
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      font-family: 'Courier New', 'Lucida Console', monospace; color: var(--pri);
+    }
+    .load-overlay .load-title {
+      font-size: 14px; letter-spacing: 4px; margin-bottom: 20px;
+      animation: pulse 2s infinite;
+    }
+    .load-overlay .load-bar-wrap {
+      width: 320px; height: 6px; border: 1px solid var(--pri3);
+      background: var(--bg2); margin-bottom: 12px;
+    }
+    .load-overlay .load-bar {
+      height: 100%; background: var(--pri); width: 0%;
+      transition: width .3s ease; box-shadow: 0 0 6px var(--pri);
+    }
+    .load-overlay .load-cmd {
+      font-size: 9px; color: var(--pri3); letter-spacing: 1px; height: 14px;
+    }
+    .load-overlay .load-elapsed {
+      font-size: 8px; color: var(--pri3); margin-top: 6px;
+    }
+    .load-overlay .load-steps {
+      margin-top: 14px; font-size: 8px; color: var(--dim); max-width: 320px;
+    }
+  </style>
+  </head>
+  <body>
+
+  <!-- ═══════ LOGIN MODAL ═══════ -->
+  <div id="loginOverlay" style="
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,0.92);
+    display:none; align-items:center; justify-content:center;
+    font-family:'Courier New','Lucida Console',monospace;
+  ">
+    <div id="loginBox" style="
+      border:1px solid var(--pri); background:var(--bg);
+      padding:24px 28px; min-width:380px; max-width:460px;
+      box-shadow:0 0 20px rgba(0,255,65,0.15), inset 0 0 60px rgba(0,255,65,0.02);
+    ">
+      <div style="border-bottom:1px solid var(--dim); padding-bottom:8px; margin-bottom:16px;
+        display:flex; justify-content:space-between; align-items:center;">
+        <span style="color:var(--pri); font-size:11px; text-transform:uppercase; letter-spacing:2px;">⬡ CONNECT TO DEVICE</span><span id="lf-hud-label" style="color:var(--pri); font-size:9px; letter-spacing:2px; margin-left:12px; opacity:0.7;"></span>
+        <span id="loginClose" style="color:var(--dim); cursor:pointer; font-size:14px;" title="Use config.yaml defaults">✕</span>
+      </div>
+      <div id="loginFields" style="display:grid; gap:10px;">
+        <label style="display:grid; gap:2px;">
+          <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">HOST</span>
+          <input id="lf-host" type="text" placeholder="switch.example.com" style="
+            background:var(--dimmer); border:1px solid var(--dim); color:var(--pri);
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">USERNAME</span>
+            <input id="lf-user" type="text" placeholder="admin" style="
+              background:var(--dimmer); border:1px solid var(--dim); color:var(--pri);
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+          <label style="display:grid; gap:2px;">
+            <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">PASSWORD</span>
+            <input id="lf-pass" type="password" placeholder="password" style="
+              background:var(--dimmer); border:1px solid var(--dim); color:var(--pri);
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+        </div>
+        <input id="lf-dtype" type="hidden">
+        <label style="display:grid; gap:2px;">
+          <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">AUTH METHOD</span>
+          <select id="lf-auth" style="
+            background:var(--dimmer); border:1px solid var(--dim); color:var(--pri);
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;"><option value="password">Password</option><option value="key">SSH Key</option></select>
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">SSH PRIVATE KEY</span>
+            <input id="lf-keyfile" type="file" style="
+              background:var(--dimmer); border:1px solid var(--dim); color:var(--pri);
+              font-family:inherit; font-size:10px; padding:4px 6px; outline:none;">
+            <span style="color:var(--dim); font-size:7px;">RSA, Ed25519, or ECDSA. Read once, never stored.</span>
+          </label>
+          <label style="display:flex; align-items:end; gap:8px; padding-bottom:6px;">
+            <input id="lf-legacy" type="checkbox" style="accent-color:var(--pri);">
+            <span style="color:var(--pri3); font-size:9px; text-transform:uppercase; letter-spacing:1px;">LEGACY SSH</span>
+          </label>
+        </div>
+      </div>
+      <div id="loginStatus" style="margin-top:12px; font-size:10px; min-height:14px; color:var(--dim);"></div>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button id="loginBtn" onclick="LoginModal.connect()" style="
+          flex:1; background:transparent; border:1px solid var(--pri); color:var(--pri);
+          font-family:inherit; font-size:11px; padding:8px; cursor:pointer;
+          text-transform:uppercase; letter-spacing:2px;"
+        >▶ CONNECT</button>
+        <button onclick="LoginModal.dismiss()" style="
+          background:transparent; border:1px solid var(--dim); color:var(--dim);
+          font-family:inherit; font-size:10px; padding:8px 14px; cursor:pointer;
+          text-transform:uppercase;" title="Skip — use config.yaml defaults"
+        >SKIP</button>
+      </div>
+    </div>
+  </div>
+  <!-- ═══════ END LOGIN MODAL ═══════ -->
+
+  <!-- ═══════ LOADING OVERLAY ═══════ -->
+  <div class="load-overlay" id="load-overlay" style="display:none">
+    <div class="load-title">INITIALIZING TELEMETRY</div>
+    <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+    <div class="load-cmd" id="load-cmd">CONNECTING...</div>
+    <div class="load-elapsed" id="load-elapsed"></div>
+    <div class="load-steps" id="load-steps"></div>
+  </div>
+
+  <div class="shell" id="app"><div class="conn-banner" id="conn-status">CONNECTING TO TELEMETRY FEED...</div></div>
+
+  <!-- Terminal FAB -->
+  <div class="term-fab" id="term-fab" onclick="Terminal.toggle()" title="SSH Terminal">
+    <svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg>
+  </div>
+
+  <!-- Terminal Overlay -->
+  <div class="term-overlay" id="term-overlay">
+    <div class="term-header">
+      <span>❯ SSH TERMINAL</span>
+      <span>
+        <button class="term-btn" onclick="Terminal.reconnect()">RECONNECT</button>
+        <button class="term-btn" onclick="Terminal.close()">CLOSE</button>
+      </span>
+    </div>
+    <div class="term-body" id="term-body"></div>
+    <div class="term-status" id="term-status">DISCONNECTED</div>
+  </div>
+
+  <script>
+  /* ==============================================================
+     MODULE: CONSTANTS
+     ============================================================== */
+  const WS_BASE = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+
+  const SEV_COLOR = {
+    0: 'var(--red)', 1: 'var(--red)', 2: 'var(--red)', 3: 'var(--red)',
+    4: 'var(--warn)', 5: 'var(--pri2)', 6: 'var(--dim)'
+  };
+  const SEV_LABEL = { 3: 'ERR', 4: 'WARN', 5: 'NOTIF', 6: 'INFO' };
+
+  const SENSOR_GROUPS = [
+    { label: 'CB',       match: d => /cpu\d/i.test(d) },
+    { label: 'SUP',      match: d => /supervisor/i.test(d) },
+    { label: 'VRM',      match: d => /vrm/i.test(d) },
+    { label: 'STAT',     match: d => /stat\d/i.test(d) },
+    { label: 'JERICHO',  match: d => /jericho/i.test(d) },
+    { label: 'FE',       match: d => /\bfe/i.test(d) },
+    { label: 'OTHER',    match: () => true },
+  ];
+
+  /* ==============================================================
+     MODULE: STATE
+     ============================================================== */
+  let ws = null;
+  let currentData = null;
+  let thermalTab = 'heatmap';
+  let logFilter = 'all';
+  let _sessionId = sessionStorage.getItem('hud_session_id') || null;
+  let _completedCmds = [];
+
+  function _setSession(sid) {
+    _sessionId = sid;
+    if (sid) sessionStorage.setItem('hud_session_id', sid);
+    else sessionStorage.removeItem('hud_session_id');
+  }
+
+  /* ==============================================================
+     MODULE: THEME
+     ============================================================== */
+  const Theme = {
+    current() {
+      return document.documentElement.getAttribute('data-theme') || 'green';
+    },
+    toggle() {
+      const next = this.current() === 'green' ? 'amber' : 'green';
+      document.documentElement.setAttribute('data-theme', next);
+      localStorage.setItem('hud-theme', next);
+      if (currentData) render(currentData);
+    },
+    init() {
+      const saved = localStorage.getItem('hud-theme');
+      if (saved) document.documentElement.setAttribute('data-theme', saved);
+    },
+    label() {
+      return this.current() === 'green' ? 'AMBER' : 'GREEN';
+    },
+    /** Return inline color strings for SVG/canvas (can't use CSS vars in all SVG contexts) */
+    colors() {
+      const isAmber = this.current() === 'amber';
+      return {
+        pri:        isAmber ? '#ff9500' : '#00ff41',
+        pri2:       isAmber ? '#e07800' : '#00cc33',
+        pri3:       isAmber ? '#a85800' : '#009922',
+        dim:        isAmber ? '#5a3200' : '#004d15',
+        dimmer:     isAmber ? '#2e1a00' : '#002a0a',
+        red:        isAmber ? '#ff4444' : '#ff3333',
+        warn:       isAmber ? '#ffcc00' : '#ffaa00',
+        cyan:       isAmber ? '#ffcc66' : '#00ddff',
+        bg:         isAmber ? '#0a0800' : '#080a08',
+        radarFill:  isAmber ? 'rgba(255,149,0,0.05)' : 'rgba(0,255,65,0.05)',
+        radarSweep1:isAmber ? 'rgba(255,149,0,0.13)' : 'rgba(0,255,65,0.13)',
+        radarSweep2:isAmber ? 'rgba(255,149,0,0.27)' : 'rgba(0,255,65,0.27)',
+        edgeColor:  isAmber ? '#ffcc66' : '#00ddff',
+        edgeLink:   isAmber ? 'rgba(255,204,102,.27)' : 'rgba(0,221,255,.27)',
+        edgeText:   isAmber ? 'rgba(255,204,102,.53)' : 'rgba(0,221,255,.53)',
+        leafLink:   isAmber ? 'rgba(255,149,0,.13)' : 'rgba(0,255,65,.13)',
+        cellOk:     isAmber ? 'rgba(255,149,0,' : 'rgba(0,255,65,',
+        cellWarn:   isAmber ? 'rgba(255,204,0,' : 'rgba(255,170,0,',
+        cellCrit:   isAmber ? 'rgba(255,68,68,' : 'rgba(255,51,51,',
+      };
+    }
+  };
+  Theme.init();
+
+  /* ==============================================================
+     MODULE: TERMINAL DRAG
+     ============================================================== */
+  (function() {
+    const hdr = document.querySelector('.term-header');
+    const overlay = document.getElementById('term-overlay');
+    let dragging = false, ox, oy;
+    hdr.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.term-btn')) return;
+      dragging = true;
+      ox = e.clientX - overlay.offsetLeft;
+      oy = e.clientY - overlay.offsetTop;
+      e.preventDefault();
+    });
+    document.addEventListener('mousemove', (e) => {
+      if (!dragging) return;
+      overlay.style.left = (e.clientX - ox) + 'px';
+      overlay.style.top = (e.clientY - oy) + 'px';
+      overlay.style.right = 'auto';
+    });
+    document.addEventListener('mouseup', () => { dragging = false; });
+  })();
+
+  /* ==============================================================
+     MODULE: UTILITIES
+     ============================================================== */
+  function safe(o, p, d) {
+    const a = p.split('.');
+    let c = o;
+    for (const k of a) { if (c == null) return d; c = c[k]; }
+    return c ?? d;
+  }
+
+  function dot(ok, blink) {
+    return `<span class="dot ${ok ? 'dot-ok' : 'dot-err'}${blink ? ' dot-blink' : ''}"></span>`;
+  }
+
+  function fmtUptime(v) {
+    const r = safe(v, 'uptime', 0);
+    if (!r) return '---';
+    const d = Math.floor(r / 86400), h = Math.floor((r % 86400) / 3600), m = Math.floor((r % 3600) / 60);
+    return `${d}d ${h}h ${m}m`;
+  }
+
+  function fmtBw(bw) {
+    if (!bw || bw <= 0) return '---';
+    if (bw >= 1e11) return '100G';
+    if (bw >= 1e10) return '10G';
+    if (bw >= 1e9) return '1G';
+    return (bw / 1e6).toFixed(0) + 'M';
+  }
+
+  function groupSensors(ss) {
+    if (!ss) return [];
+    const used = new Set(), groups = [];
+    for (const g of SENSOR_GROUPS) {
+      const items = ss.filter((s, i) => !used.has(i) && g.match(s.description));
+      items.forEach(s => used.add(ss.indexOf(s)));
+      if (items.length) groups.push({ label: g.label, sensors: items });
+    }
+    return groups;
+  }
+
+  /* ==============================================================
+     MODULE: SVG RENDERERS
+     ============================================================== */
+  function tempColor(t, s, a) {
+    return t >= a ? 'var(--red)' : t >= s ? 'var(--warn)' : 'var(--pri)';
+  }
+
+  function tempCellBg(t, s, c) {
+    const tc = Theme.colors();
+    const p = t / c;
+    if (t >= s) {
+      const a = Math.round(Math.min(255, p * 200)).toString(16).padStart(2, '0');
+      return t >= (s + c) / 2 ? `${tc.cellCrit}0.${a})` : `${tc.cellWarn}0.${a})`;
+    }
+    const a = Math.round(Math.min(200, p * 180)).toString(16).padStart(2, '0');
+    return `${tc.cellOk}0.${a})`;
+  }
+
+  function gaugeRing(pct, size, color, label) {
+    const r = size / 2 - 3, c = Math.PI * 2 * r, off = c - (pct / 100) * c;
+    return `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">` +
+      `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--dimmer)" stroke-width="3"/>` +
+      `<circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size/2} ${size/2})" stroke-linecap="round"/>` +
+      `<text x="${size/2}" y="${size/2-1}" fill="${color}" font-size="8" font-family="'Courier New',monospace" text-anchor="middle" font-weight="bold">${pct.toFixed(0)}%</text>` +
+      `<text x="${size/2}" y="${size/2+7}" fill="var(--pri3)" font-size="5" font-family="'Courier New',monospace" text-anchor="middle">${label}</text></svg>`;
+  }
+
+  function renderRadar(nei, size) {
+    if (!nei || !nei.length) return '<div style="text-align:center;color:var(--pri3);padding:20px">NO LLDP DATA</div>';
+    const tc = Theme.colors();
+    const cx = size / 2, cy = size / 2, r = size / 2 - 28;
+    const leafs  = nei.filter(n => /tor|leaf|srv/i.test(n.neighborDevice));
+    const edges  = nei.filter(n => /edge|spine|core|border/i.test(n.neighborDevice));
+    const others = nei.filter(n => !leafs.includes(n) && !edges.includes(n));
+
+    let s = `<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
+    s += `<defs><radialGradient id="rg"><stop offset="0%" stop-color="${tc.pri}" stop-opacity="0.05"/><stop offset="100%" stop-color="${tc.pri}" stop-opacity="0"/></radialGradient></defs>`;
+    s += `<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#rg)"/>`;
+    for (const sc of [.4, .7, 1])
+      s += `<circle cx="${cx}" cy="${cy}" r="${r*sc}" fill="none" stroke="var(--dimmer)" stroke-width="0.5" stroke-dasharray="2,3"/>`;
+    s += `<line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="var(--dimmer)" stroke-width="0.3"/>`;
+    s += `<line x1="${cx}" y1="${cy-r}" x2="${cx}" y2="${cy+r}" stroke="var(--dimmer)" stroke-width="0.3"/>`;
+    s += `<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="${tc.radarSweep1}" stroke-width="12" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+    s += `<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="${tc.radarSweep2}" stroke-width="1" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+
+    // Edge tier
+    edges.forEach((n, i) => {
+      const a = Math.PI + (i / Math.max(edges.length, 1)) * Math.PI * .5 - Math.PI * .25;
+      const px = cx + Math.cos(a) * r * .38, py = cy + Math.sin(a) * r * .38;
+      const nm = n.neighborDevice.replace(/\1\.company\.com$/, '');
+      s += `<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="${tc.edgeLink}" stroke-width="1.5"/>`;
+      s += `<rect x="${px-16}" y="${py-5}" width="32" height="10" fill="var(--bg)" stroke="${tc.edgeColor}" stroke-width="1" rx="1"/>`;
+      s += `<text x="${px}" y="${py+2.5}" fill="${tc.edgeColor}" font-size="5" font-family="'Courier New',monospace" text-anchor="middle" font-weight="bold">${nm}</text>`;
+    });
+
+    // Center node
+    s += `<rect x="${cx-20}" y="${cy-9}" width="40" height="18" fill="var(--bg)" stroke="${tc.pri}" stroke-width="1.5" rx="2"/>`;
+    s += `<text x="${cx}" y="${cy+3}" fill="${tc.pri}" font-size="6.5" font-family="'Courier New',monospace" text-anchor="middle" font-weight="bold">dist2</text>`;
+
+    // Leaf tier
+    leafs.forEach((n, i) => {
+      const a = (i / Math.max(leafs.length, 1)) * Math.PI * 2 - Math.PI / 2;
+      const px = cx + Math.cos(a) * r * .78, py = cy + Math.sin(a) * r * .78;
+      const nm = n.neighborDevice.replace(/\1\.company\.com$/, '').replace('tor5-', '');
+      s += `<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="${tc.leafLink}" stroke-width=".8"/>`;
+      s += `<circle cx="${px}" cy="${py}" r="3.5" fill="var(--bg)" stroke="${tc.pri2}" stroke-width="1"/>`;
+      s += `<text x="${px}" y="${py-6}" fill="var(--pri3)" font-size="5" font-family="'Courier New',monospace" text-anchor="middle">${nm}</text>`;
+    });
+
+    // Other
+    others.forEach((n, i) => {
+      const a = (i / Math.max(others.length, 1)) * Math.PI * .5 + Math.PI * .75;
+      const px = cx + Math.cos(a) * r * .55, py = cy + Math.sin(a) * r * .55;
+      const nm = n.neighborDevice.replace(/\1\.company\.com$/, '').substring(0, 10);
+      s += `<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="color-mix(in srgb, var(--pri3) 27%, transparent)" stroke-width=".8"/>`;
+      s += `<circle cx="${px}" cy="${py}" r="3" fill="var(--bg)" stroke="var(--pri3)" stroke-width="1"/>`;
+      s += `<text x="${px}" y="${py-6}" fill="var(--pri3)" font-size="4.5" font-family="'Courier New',monospace" text-anchor="middle">${nm}</text>`;
+    });
+
+    s += `<text x="${cx}" y="14" fill="var(--pri3)" font-size="6" font-family="'Courier New',monospace" text-anchor="middle" letter-spacing="1">LEAF TIER</text>`;
+    s += `<text x="${cx}" y="${size-6}" fill="${tc.edgeText}" font-size="6" font-family="'Courier New',monospace" text-anchor="middle" letter-spacing="1">EDGE TIER</text></svg>`;
+    return s;
+  }
+
+  /* ==============================================================
+     MODULE: PANEL RENDERERS
+     Each returns an HTML string for its panel.
+     ============================================================== */
+
+  function renderHeader(meta, ver, env, hasAlert, pollErr, stale, bgpData) {
+    const hostname  = safe(ver, 'hostname', meta.hostname || '---');
+    const model     = safe(ver, 'modelName', '---');
+    const serialNum = safe(ver, 'serialNumber', '---');
+    const eosVer    = safe(ver, 'version', '---');
+    const hwRev     = safe(ver, 'hardwareRevision', '');
+    const uptime    = fmtUptime(ver);
+    const status    = pollErr ? 'ERROR' : hasAlert ? 'THERMAL WARNING' : 'NOMINAL';
+    const statusCol = pollErr ? 'var(--red)' : hasAlert ? 'var(--warn)' : 'var(--pri)';
+
+    return `<div class="header"><div>` +
+      `<span class="hostname">${hostname.toUpperCase()}</span>` +
+      `<span class="hsub">${model}</span>` +
+      `<span class="hdim">S/N:${serialNum}</span>` +
+      `<span class="hdim">RID:${safe(bgpData, 'vrfs.default.routerId', '---')}</span>` +
+      `${hwRev ? `<span class="hdim">HW:${hwRev}</span>` : ''}` +
+      `</div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">` +
+      `<div><span class="lbl">UPTIME </span><span class="val" style="font-size:9px">${uptime}</span></div>` +
+      `<div><span class="lbl">EOS </span><span style="font-size:9px;color:var(--pri3)">${eosVer}</span></div>` +
+      `<div><span class="lbl">AIRFLOW </span><span style="font-size:9px;color:var(--pri3)">${env.airflow || '---'}</span></div>` +
+      `<div>${pollErr ? dot(false, true) : hasAlert ? dot(false, true) : dot(true, false)}` +
+      `<span class="val" style="font-size:9px;color:${statusCol}">${status}</span>` +
+      `${stale ? '<span style="color:var(--warn);font-size:7px;margin-left:4px">[STALE]</span>' : ''}</div>` +
+      `<button class="theme-toggle" onclick="Theme.toggle()" title="Switch theme">◑ ${Theme.label()}</button>` +
+      `</div></div>`;
+  }
+
+  function renderCompute(ver, cpuInfo, topProc) {
+    const totalMem = safe(ver, 'memTotal', 0);
+    const freeMem  = safe(ver, 'memFree', 0);
+    const memPct   = totalMem > 0 ? ((totalMem - freeMem) / totalMem * 100) : 0;
+    const cpuUsed  = (100 - (cpuInfo.idle || 0)).toFixed(1);
+
+    return `<div class="panel"><div class="panel-title">COMPUTE</div><div class="panel-body">` +
+      `<div style="display:flex;align-items:flex-start;gap:8px">` +
+      `<div style="display:flex;gap:6px;flex-shrink:0">` +
+      `${gaugeRing(parseFloat(cpuUsed), 50, parseFloat(cpuUsed) > 80 ? 'var(--red)' : parseFloat(cpuUsed) > 60 ? 'var(--warn)' : 'var(--pri)', 'CPU')}` +
+      `${gaugeRing(memPct, 50, memPct > 85 ? 'var(--red)' : memPct > 70 ? 'var(--warn)' : 'var(--pri)', 'MEM')}</div>` +
+      `<div style="flex:1;font-size:7px;color:var(--pri3)">` +
+      `<div>usr:${cpuInfo.user || 0} sys:${cpuInfo.system || 0} irq:${cpuInfo.hwIrq || 0} io:${cpuInfo.ioWait || 0} nice:${cpuInfo.nice || 0}</div>` +
+      `<div style="margin-top:2px">RAM: ${totalMem ? ((totalMem / 1024 / 1024).toFixed(1) + 'G') : '---'} total, ${freeMem ? ((freeMem / 1024 / 1024).toFixed(1) + 'G') : '---'} free</div>` +
+      `<div style="margin-top:4px;border-top:1px solid var(--dimmer);padding-top:3px">` +
+      `<span class="lbl">TOP: </span><span style="color:${topProc.cpuPct > 50 ? 'var(--warn)' : 'var(--pri)'}"><b>${topProc.cmd}</b> ${topProc.cpuPct}%</span>` +
+      `<span style="color:var(--dim)"> PID:${topProc.pid} RES:${topProc.residentMem}</span></div></div></div></div></div>`;
+  }
+
+  function renderThermal(sensors, hasAlert) {
+    const thermalCls = hasAlert ? 'panel warning' : 'panel';
+    const alertSensors = sensors.filter(s => s.temp >= s.setpoint);
+
+    let h = `<div class="${thermalCls}"><div class="panel-title">${hasAlert ? '<span style="animation:blink 1.5s infinite;margin-right:6px">&#x26A0;</span>' : ''}THERMAL MATRIX</div><div class="panel-body">`;
+    h += `<div style="margin-bottom:4px"><span class="tab ${thermalTab === 'heatmap' ? 'active' : ''}" onclick="thermalTab='heatmap';render(currentData)">HEATMAP</span><span class="tab ${thermalTab === 'sensors' ? 'active' : ''}" onclick="thermalTab='sensors';render(currentData)">SENSORS</span></div>`;
+
+    if (thermalTab === 'heatmap') {
+      for (const grp of groupSensors(sensors)) {
+        const mx = Math.max(...grp.sensors.map(s => s.temp));
+        const ms = Math.max(...grp.sensors.map(s => s.setpoint));
+        h += `<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><span class="lbl" style="min-width:52px">${grp.label}</span><div class="flex-wrap">`;
+        for (const s of grp.sensors) {
+          const bg = tempCellBg(s.temp, s.setpoint, s.critical_limit);
+          const col = s.temp >= s.setpoint ? '#fff' : 'var(--pri)';
+          const anim = s.temp >= s.setpoint ? ';animation:blink 2s infinite' : '';
+          h += `<div class="therm-cell" title="${s.description}: ${s.temp}C / ${s.setpoint}C set / ${s.alert_limit}C alert" style="background:${bg};border:1px solid ${s.temp >= s.setpoint ? tempColor(s.temp, s.setpoint, s.alert_limit) : 'color-mix(in srgb, var(--pri) 27%, transparent)'};color:${col}${anim}">${Math.round(s.temp)}</div>`;
+        }
+        h += `</div><span style="font-size:8px;color:${mx >= ms ? 'var(--warn)' : 'var(--pri3)'};min-width:28px;text-align:right">${mx.toFixed(0)}C</span></div>`;
+      }
+    } else {
+      h += '<div class="scroll" style="max-height:160px">';
+      for (const s of sensors) {
+        const col = tempColor(s.temp, s.setpoint, s.alert_limit);
+        const pct = (s.temp / s.critical_limit * 100).toFixed(0);
+        h += `<div style="display:flex;align-items:center;gap:4px;padding:1px 0;border-bottom:1px solid color-mix(in srgb, var(--dimmer) 8%, transparent)"><span class="lbl" style="min-width:100px">${s.description}</span><span class="bar-track" style="width:50px"><span style="position:absolute;left:${(s.setpoint / s.critical_limit * 100)}%;top:-1px;width:1px;height:7px;background:color-mix(in srgb, var(--warn) 40%, transparent)"></span><span class="bar-fill" style="width:${pct}%;background:${col}"></span></span><span style="font-size:8px;color:${col};min-width:32px;font-weight:${s.temp >= s.setpoint ? 'bold' : 'normal'}">${s.temp.toFixed(1)}</span><span style="font-size:7px;color:var(--dim)">/${s.setpoint}</span></div>`;
+      }
+      h += '</div>';
+    }
+
+    if (alertSensors.length > 0) {
+      h += '<div class="alert-box"><span style="color:var(--warn);animation:blink 1.5s infinite">&#x26A0;</span><span style="color:var(--warn);margin-left:4px">' +
+        alertSensors.length + ' sensor' + (alertSensors.length > 1 ? 's' : '') + ' at/above setpoint:</span>';
+      for (const s of alertSensors) h += `<span style="color:var(--warn);font-weight:bold;margin-left:4px">${s.description} (${s.temp}/${s.setpoint})</span>`;
+      h += '</div>';
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderPowerCooling(psus, fans) {
+    const totalW   = psus.reduce((s, p) => s + p.output_watts, 0);
+    const totalCap = psus.reduce((s, p) => s + p.capacity_w, 0);
+
+    let h = `<div class="panel"><div class="panel-title">POWER &amp; COOLING</div><div class="panel-body">`;
+    for (const p of psus) {
+      const pp = (p.output_watts / p.capacity_w * 100).toFixed(0);
+      h += `<div class="row row-b"><span style="font-size:9px">${dot(p.status === 'Ok', false)}PSU-${p.id}</span><span style="font-size:7px;color:var(--pri3)">${p.model}</span><span><b style="font-size:9px">${p.output_watts}W</b><span style="font-size:7px;color:var(--dim)">/${p.capacity_w}W (${pp}%)</span></span><span style="font-size:7px"><span style="color:var(--pri3)">IN:</span>${p.input_amps}A <span style="color:var(--pri3)">OUT:</span>${p.output_amps}A</span></div>`;
+    }
+    h += `<div class="row" style="border-top:1px solid var(--dimmer);margin-top:2px;padding-top:2px"><span class="lbl">TOTAL DRAW</span><span><b style="font-size:10px">${totalW}W</b><span style="font-size:8px;color:var(--pri3)"> of ${totalCap}W (${totalCap ? (totalW / totalCap * 100).toFixed(1) : 0}%)</span></span></div>`;
+    h += `<div style="margin-top:4px;display:flex;gap:4px;flex-wrap:wrap;align-items:center"><span class="lbl" style="margin-right:2px">FANS</span>`;
+    for (const f of fans) h += `<span style="font-size:7px">${dot(f.status === 'Ok', false)}${f.id} ${f.actual_speed}%</span>`;
+    h += '</div></div></div>';
+    return h;
+  }
+
+  function renderTransceiverInventory(xcvrSlots, populatedOptics, totalSlots) {
+    const allSlots = Object.keys(xcvrSlots).map(Number).sort((a, b) => a - b);
+    let h = `<div class="panel"><div class="panel-title">TRANSCEIVER INVENTORY (${populatedOptics.length}/${totalSlots} POPULATED)</div><div class="panel-body">`;
+    if (allSlots.length) {
+      h += '<div style="margin-bottom:4px">';
+      for (const slot of allSlots) {
+        const x = xcvrSlots[slot] || xcvrSlots[String(slot)] || {};
+        const pop = x.mfgName && x.mfgName !== 'Not Present';
+        h += `<div class="port-slot ${pop ? 'active' : 'empty'}" title="${pop ? 'Slot ' + slot + ': ' + x.modelName + ' S/N:' + x.serialNum : 'Slot ' + slot + ': Empty'}">${slot}</div>`;
+      }
+      h += '</div>';
+      if (populatedOptics.length) {
+        h += '<div class="scroll" style="max-height:100px"><table class="tbl"><thead><tr><th>SLOT</th><th>MODEL</th><th>SERIAL</th><th>MFG</th></tr></thead><tbody>';
+        for (const o of populatedOptics)
+          h += `<tr><td>Et${o.slot}/1</td><td style="color:var(--pri2)">${o.modelName}</td><td style="color:var(--pri3)">${o.serialNum}</td><td style="color:var(--dim);font-size:7px">${o.mfgName}</td></tr>`;
+        h += '</tbody></table></div>';
+      }
+    } else {
+      h += '<div style="color:var(--pri3)">NO INVENTORY DATA</div>';
+    }
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderLldpTopology(lldpNei) {
+    return `<div class="panel" style="width:100%"><div class="panel-title">LLDP TOPOLOGY</div><div class="panel-body"><div style="text-align:center">${renderRadar(lldpNei, 260)}</div><div style="text-align:center;font-size:7px;color:var(--pri3);margin-top:2px">${lldpNei.filter(n => /tor|leaf/i.test(n.neighborDevice)).length} LEAF | ${lldpNei.filter(n => /edge/i.test(n.neighborDevice)).length} EDGE | ${lldpNei.length} TOTAL</div></div></div>`;
+  }
+
+  function renderRibSummary(routeData, ospfCounts, bgpCounts, totalRoutes) {
+    let h = `<div class="panel" style="width:100%"><div class="panel-title">RIB SUMMARY</div><div class="panel-body">`;
+    for (const [l, c] of [
+      ['CONNECTED', routeData.connected || 0],
+      ['OSPF INTRA', ospfCounts.ospfIntraArea || 0],
+      ['OSPF EXT2', ospfCounts.ospfExternal2 || 0],
+      ['BGP INTERNAL', bgpCounts.bgpInternal || 0],
+      ['INTERNAL', routeData.internal || 0],
+    ]) {
+      h += `<div class="row"><span class="lbl">${l}</span><span class="val" style="font-size:9px;color:${c > 0 ? 'var(--pri2)' : 'var(--dim)'}">${c}</span></div>`;
+    }
+    h += `<div class="row" style="border-top:1px solid var(--dimmer);margin-top:2px;padding-top:2px"><span class="lbl">TOTAL</span><span class="val" style="font-size:11px">${totalRoutes.toLocaleString()}</span></div>`;
+    const maskLen = routeData.maskLen || {};
+    const topMasks = Object.entries(maskLen).sort((a, b) => b[1] - a[1]).slice(0, 6);
+    if (topMasks.length) h += `<div style="margin-top:3px;font-size:7px;color:var(--pri3)">PREFIX DIST: ${topMasks.map(([m, c]) => '/' + m + ':' + c).join(' ')}</div>`;
+    h += '</div></div>';
+    return h;
+  }
+
+  function renderOspf(ospfEntries, instList) {
+    let h = `<div class="panel" style="width:100%"><div class="panel-title">OSPF ADJACENCIES (${ospfEntries.length})</div><div class="panel-body"><div class="scroll" style="max-height:280px">`;
+    for (const o of ospfEntries) {
+      const det = o.details || {};
+      h += `<div style="padding:2px 0;border-bottom:1px solid color-mix(in srgb, var(--dimmer) 8%, transparent)"><div class="row">${dot(o.adjacencyState === 'full', false)}<span class="val" style="font-size:9px">${o.routerId}</span><span style="font-size:8px;color:var(--pri3)">${o.adjacencyState.toUpperCase()}</span></div><div style="font-size:7px;color:var(--pri3);margin-left:8px;margin-top:1px">${o.interfaceName} | Area ${det.areaId || '0.0.0.0'} | BFD:${det.bfdState || '---'} | Retx:${(det.retransmissionCount || 0).toLocaleString()} | Chg:${det.numberOfStateChanges || 0}</div></div>`;
+    }
+    if (!ospfEntries.length) h += '<div style="color:var(--pri3)">NO OSPF NEIGHBORS</div>';
+    h += '</div></div></div>';
+    return h;
+  }
+
+  function renderBgpPeers(bgpPeers, allBgpUp) {
+    let h = `<div class="${allBgpUp ? 'panel' : 'panel alert'}"><div class="panel-title">BGP PEERING TABLE</div><div class="panel-body"><table class="tbl"><thead><tr><th>NEIGHBOR</th><th>DESC</th><th class="c">ST</th><th class="r">PFX RCV/ACC</th><th class="r">MSG TX/RX</th></tr></thead><tbody>`;
+    for (const p of bgpPeers) {
+      const up = p.peerState === 'Established';
+      const kn = (p.description || '').includes('company');
+      const col = kn ? 'var(--cyan)' : up ? 'var(--pri)' : 'var(--red)';
+      h += `<tr><td style="color:${col}">${p.ip}</td><td style="color:${kn ? 'color-mix(in srgb, var(--cyan) 53%, transparent)' : 'var(--pri3)'};font-size:7px">${p.description || ''}</td><td class="c">${dot(up, !up)}</td><td class="r"><b style="font-size:8px;color:${p.prefixReceived === 0 ? 'var(--dim)' : 'var(--pri2)'}">${p.prefixReceived}</b><span style="color:var(--dim)">/</span><span style="font-size:8px;color:var(--pri3)">${p.prefixAccepted}</span></td><td class="r" style="font-size:7px;color:var(--pri3)">${(p.msgSent / 1e6).toFixed(1)}M/${(p.msgReceived / 1e6).toFixed(1)}M</td></tr>`;
+    }
+    h += `</tbody></table><div style="margin-top:3px;font-size:7px;color:var(--pri3);text-align:center">ASN ${bgpPeers.length ? bgpPeers[0].asn : '---'} | ${bgpPeers.length} PEERS | ${bgpPeers.reduce((s, p) => s + (p.prefixReceived || 0), 0)} PFX RCV</div></div></div>`;
+    return h;
+  }
+
+  function renderEventLog(logs, filteredLogs) {
+    const logCls = logs.some(l => l.severity <= 4) ? 'panel warning' : 'panel';
+    let h = `<div class="${logCls}"><div class="panel-title">EVENT LOG</div><div class="panel-body">`;
+    h += `<div style="display:flex;gap:6px;margin-bottom:4px"><span class="tab ${logFilter === 'all' ? 'active' : ''}" onclick="logFilter='all';render(currentData)">ALL</span><span class="tab ${logFilter === 'warn' ? 'active' : ''}" onclick="logFilter='warn';render(currentData)">WARN+</span><span class="tab ${logFilter === 'config' ? 'active' : ''}" onclick="logFilter='config';render(currentData)">CONFIG</span><span style="font-size:7px;color:var(--dim);margin-left:auto">${filteredLogs.length} entries</span></div>`;
+    h += '<div class="scroll" style="max-height:180px">';
+    for (const l of filteredLogs) {
+      const col = SEV_COLOR[l.severity] || 'var(--pri3)';
+      const ts = (l.timestamp || '').substring(5, 16).replace('T', ' ');
+      h += `<div class="log-entry"><span class="log-ts">${ts}</span><span class="log-sev" style="color:${col};font-weight:${l.severity <= 4 ? 'bold' : 'normal'}">${SEV_LABEL[l.severity] || l.severity}</span><span style="color:${col};opacity:.85;word-break:break-all">%${l.facility}-${l.severity}-${l.mnemonic}: ${l.message}</span></div>`;
+    }
+    h += '</div></div></div>';
+    return h;
+  }
+
+  function renderActiveInterfaces(activeIntf) {
+    let h = `<div class="panel"><div class="panel-title">ACTIVE INTERFACES (${activeIntf.length})</div><div class="panel-body"><div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>PORT</th><th>DESCRIPTION</th><th class="r">SPEED</th><th class="r">TYPE</th></tr></thead><tbody>`;
+    for (const i of activeIntf) {
+      h += `<tr><td>${dot(true, false)}<b>${i.name}</b></td><td style="color:var(--pri3);font-size:7px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.description || ''}</td><td class="r">${fmtBw(i.bandwidth)}</td><td class="r" style="color:var(--dim);font-size:7px">${i.interfaceType || ''}</td></tr>`;
+    }
+    h += '</tbody></table></div></div></div>';
+    return h;
+  }
+
+  function renderPortSummary(activeIntf, disabledIntf, populatedOptics, emptySlots) {
+    return `<div class="panel"><div class="panel-title">PORT SUMMARY</div><div class="panel-body"><div style="display:flex;gap:12px;justify-content:center">` +
+      `<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--pri)">${activeIntf.length}</div><div class="lbl">ACTIVE</div></div>` +
+      `<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--dim)">${disabledIntf.length}</div><div class="lbl">DISABLED</div></div>` +
+      `<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--pri2)">${populatedOptics.length}</div><div class="lbl">OPTICS</div></div>` +
+      `<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--dim)">${emptySlots}</div><div class="lbl">EMPTY</div></div>` +
+      `</div></div></div>`;
+  }
+
+  function renderFooter(meta, env, psus, bgpPeers, ospfEntries, activeIntf, totalSlots, instList) {
+    const totalW   = psus.reduce((s, p) => s + p.output_watts, 0);
+    const totalCap = psus.reduce((s, p) => s + p.capacity_w, 0);
+    return `<div class="footer"><span>POLL:${meta.poll_count || 0} | ${meta.poll_time || '---'}s | AMBIENT:${env.ambient_temp || '--'}C | DRAW:${totalW}W/${totalCap}W | TEMP:${env.temp_status || '---'} | COOL:${env.cooling_status || '---'}</span><span style="animation:pulse 2s infinite">${dot(true, false)} TELEMETRY ${meta.error ? '<span style="color:var(--warn)">DEGRADED</span>' : 'ACTIVE'}</span><span>OSPF:${Object.keys(instList).join(',') || '---'} | ${bgpPeers.length} BGP | ${ospfEntries.length} OSPF | ${activeIntf.length}/${totalSlots} PORTS</span></div>`;
+  }
+
+  /* ==============================================================
+     MODULE: DATA EXTRACTION
+     ============================================================== */
+  function extractState(d) {
+    const meta = d.meta || {}, ver = d.version || {}, env = d.environment || {}, proc = d.proc || {};
+    const bgpRaw = d.bgp || {};
+    const bgpData = safe(d, 'bgp.vrfs.default.peers', {});
+    const instList = safe(d, 'ospf.vrfs.default.instList', {});
+    const ospfEntries = [];
+    for (const pid in instList) ospfEntries.push(...(instList[pid].ospfNeighborEntries || []));
+
+    const lldpNei      = safe(d, 'lldp.lldpNeighbors', []);
+    const routeData    = safe(d, 'routes.vrfs.default', {});
+    const intfStatuses = safe(d, 'interfaces.interfaceStatuses', {});
+    const logs         = d.logging || [];
+    const cpuInfo      = safe(proc, 'cpuInfo.%Cpu(s)', {});
+    const processes    = safe(proc, 'processes', {});
+    const xcvrSlots    = safe(d, 'inventory.xcvrSlots', {});
+
+    const sensors      = env.sensors || [];
+    const fans         = env.fans || [];
+    const psus         = env.power_supplies || [];
+    const alertSensors = sensors.filter(s => s.temp >= s.setpoint);
+    const hasAlert     = alertSensors.length > 0;
+
+    let topProc = { cmd: '---', cpuPct: 0, residentMem: '0', virtMem: '0', pid: '---' };
+    for (const [pid, p] of Object.entries(processes))
+      if (p.cpuPct > topProc.cpuPct) topProc = { ...p, pid };
+
+    const bgpPeers    = Object.entries(bgpData).map(([ip, p]) => ({ ip, ...p }));
+    const allBgpUp    = bgpPeers.every(p => p.peerState === 'Established');
+    const bgpCounts   = routeData.bgpCounts || {};
+    const ospfCounts  = routeData.ospfCounts || {};
+    const totalRoutes = routeData.totalRoutes || 0;
+
+    const activeIntf   = Object.entries(intfStatuses).filter(([_, v]) => v.linkStatus === 'connected').map(([n, v]) => ({ name: n, ...v })).sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
+    const disabledIntf = Object.entries(intfStatuses).filter(([_, v]) => v.linkStatus === 'disabled');
+
+    const populatedOptics = Object.entries(xcvrSlots).filter(([_, v]) => v.mfgName && v.mfgName !== 'Not Present').map(([slot, v]) => ({ slot: parseInt(slot), ...v })).sort((a, b) => a.slot - b.slot);
+    const emptySlots = Object.entries(xcvrSlots).filter(([_, v]) => !v.mfgName || v.mfgName === 'Not Present').length;
+    const totalSlots = Object.keys(xcvrSlots).length;
+
+    let filteredLogs = logs;
+    if (logFilter === 'warn') filteredLogs = logs.filter(l => l.severity <= 4);
+    else if (logFilter === 'config') filteredLogs = logs.filter(l => l.source === 'ConfigAgent');
+
+    return {
+      meta, ver, env, proc, bgpRaw, cpuInfo, topProc,
+      sensors, fans, psus, hasAlert, alertSensors,
+      bgpPeers, allBgpUp, bgpCounts, ospfCounts, totalRoutes,
+      ospfEntries, instList, lldpNei, routeData,
+      activeIntf, disabledIntf,
+      xcvrSlots, populatedOptics, emptySlots, totalSlots,
+      logs, filteredLogs,
+      stale: meta.stale, pollErr: meta.error,
+    };
+  }
+
+  /* ==============================================================
+     MODULE: MAIN RENDER
+     ============================================================== */
+  function render(d) {
+    if (!d) return;
+    const s = extractState(d);
+
+    let h = '';
+    h += renderHeader(s.meta, s.ver, s.env, s.hasAlert, s.pollErr, s.stale, s.bgpRaw);
+    h += '<div class="grid">';
+
+    // LEFT COLUMN
+    h += '<div class="col">';
+    h += renderCompute(s.ver, s.cpuInfo, s.topProc);
+    h += renderThermal(s.sensors, s.hasAlert);
+    h += renderPowerCooling(s.psus, s.fans);
+    h += renderTransceiverInventory(s.xcvrSlots, s.populatedOptics, s.totalSlots);
+    h += '</div>';
+
+    // CENTER COLUMN
+    h += '<div class="col" style="align-items:center">';
+    h += renderLldpTopology(s.lldpNei);
+    h += renderRibSummary(s.routeData, s.ospfCounts, s.bgpCounts, s.totalRoutes);
+    h += renderOspf(s.ospfEntries, s.instList);
+    h += '</div>';
+
+    // RIGHT COLUMN
+    h += '<div class="col">';
+    h += renderBgpPeers(s.bgpPeers, s.allBgpUp);
+    h += renderEventLog(s.logs, s.filteredLogs);
+    h += renderActiveInterfaces(s.activeIntf);
+    h += renderPortSummary(s.activeIntf, s.disabledIntf, s.populatedOptics, s.emptySlots);
+    h += '</div>';
+
+    h += '</div>'; // grid
+    h += renderFooter(s.meta, s.env, s.psus, s.bgpPeers, s.ospfEntries, s.activeIntf, s.totalSlots, s.instList);
+
+    document.getElementById('app').innerHTML = h;
+  }
+
+  /* ==============================================================
+     MODULE: SSH TERMINAL (xterm.js + paramiko proxy)
+     ============================================================== */
+  const Terminal = {
+    _term: null,
+    _fitAddon: null,
+    _ws: null,
+    _open: false,
+
+    toggle() {
+      this._open ? this.close() : this.open();
+    },
+
+    open() {
+      const overlay = document.getElementById('term-overlay');
+      const fab = document.getElementById('term-fab');
+      overlay.classList.add('open');
+      fab.classList.add('active');
+      this._open = true;
+
+      if (!this._term) {
+        const isAmber = Theme.current() === 'amber';
+        this._term = new window.Terminal({
+          cursorBlink: true,
+          fontSize: 13,
+          fontFamily: "'Courier New', 'Lucida Console', monospace",
+          theme: this._getTheme(),
+          scrollback: 5000,
+        });
+        this._fitAddon = new window.FitAddon.FitAddon();
+        this._term.loadAddon(this._fitAddon);
+        this._term.open(document.getElementById('term-body'));
+        this._fitAddon.fit();
+        this._resizeObserver = new ResizeObserver(() => {
+          if (this._fitAddon && this._open) {
+            this._fitAddon.fit();
+            if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+              this._ws.send(JSON.stringify({ cols: this._term.cols, rows: this._term.rows }));
+            }
+          }
+        });
+        this._resizeObserver.observe(document.getElementById('term-body'));
+      } else {
+        this._term.options.theme = this._getTheme();
+        setTimeout(() => this._fitAddon.fit(), 50);
+      }
+
+      if (!this._ws || this._ws.readyState !== WebSocket.OPEN) {
+        this._connect();
+      }
+    },
+
+    close() {
+      document.getElementById('term-overlay').classList.remove('open');
+      document.getElementById('term-fab').classList.remove('active');
+      this._open = false;
+    },
+
+    reconnect() {
+      if (this._ws) { try { this._ws.close(); } catch(e) {} }
+      if (this._term) this._term.clear();
+      this._connect();
+    },
+
+    _getTheme() {
+      const isAmber = Theme.current() === 'amber';
+      return {
+        background: isAmber ? '#0a0800' : '#080a08',
+        foreground: isAmber ? '#ff9500' : '#00ff41',
+        cursor:     isAmber ? '#ff9500' : '#00ff41',
+        selectionBackground: isAmber ? 'rgba(255,149,0,0.25)' : 'rgba(0,255,65,0.25)',
+      };
+    },
+
+    _connect() {
+      const status = document.getElementById('term-status');
+      status.textContent = 'CONNECTING...';
+
+      const url = `${WS_BASE}/ws/terminal${_sessionId ? '?session=' + _sessionId : ''}`;
+      this._ws = new WebSocket(url);
+
+      this._ws.binaryType = 'arraybuffer';
+
+      this._ws.onopen = () => {
+        status.textContent = 'CONNECTED';
+        this._ws.send(JSON.stringify({ cols: this._term.cols, rows: this._term.rows }));
+      };
+
+      this._ws.onmessage = (e) => {
+        if (e.data instanceof ArrayBuffer) {
+          this._term.write(new Uint8Array(e.data));
+        } else {
+          this._term.write(e.data);
+        }
+      };
+
+      this._ws.onclose = () => { status.textContent = 'DISCONNECTED'; };
+      this._ws.onerror = () => { status.textContent = 'CONNECTION ERROR'; };
+
+      // Forward keystrokes to SSH
+      this._term.onData((data) => {
+        if (this._ws && this._ws.readyState === WebSocket.OPEN) {
+          this._ws.send(data);
+        }
+      });
+    }
+  };
+
+  /* ==============================================================
+     MODULE: LOGIN MODAL
+     ============================================================== */
+  const LoginModal = {
+    overlay: null,
+
+    async init() {
+      this.overlay = document.getElementById('loginOverlay');
+      const params = new URLSearchParams(window.location.search);
+
+      // Attach to a session a host process already established (nhd desktop
+      // POSTs /api/connect itself so key material never rides the URL). The
+      // resume path below validates this id via /api/status and attaches.
+      const _urlSession = params.get('session');
+      if (_urlSession) _setSession(_urlSession);
+
+      // Fetch config.yaml defaults
+      let defaults = {};
+      try {
+        const r = await fetch('/api/defaults');
+        if (r.ok) defaults = await r.json();
+      } catch(e) {}
+
+      const val = (key, fb='') => params.get(key) || defaults[key] || fb;
+      document.getElementById('lf-host').value    = val('host');
+      document.getElementById('lf-user').value    = val('username');
+      document.getElementById('lf-pass').value    = params.get('password') || '';
+      document.getElementById('lf-dtype').value   = val('device_type', 'arista_eos');
+      const _DTYPE_LABELS = {arista_eos:'ARISTA EOS',juniper_junos:'JUNIPER JUNOS',cisco_ios:'CISCO IOS',cisco_xe:'CISCO IOS-XE',cisco_nxos:'CISCO NX-OS',linux:'LINUX'};
+      {
+        const _dt = document.getElementById('lf-dtype').value;
+        const _hl = document.getElementById('lf-hud-label');
+        if (_hl) _hl.textContent = (_DTYPE_LABELS[_dt] || (_dt||'').toUpperCase()) + ' HUD';
+      }
+      // AUTH METHOD: device_type is locked to this server's vendor above
+      // (override only via ?device_type= in the URL). The modal picks password
+      // or SSH key and shows just that field.
+      const _useKeys = params.get('auth')
+        ? (params.get('auth') === 'key')
+        : ((params.get('use_keys') || String(defaults.use_keys)) === 'true');
+      document.getElementById('lf-auth').value = _useKeys ? 'key' : 'password';
+      const _applyAuthMode = () => {
+        const mode = document.getElementById('lf-auth').value;
+        const pL = document.getElementById('lf-pass').closest('label');
+        const kL = document.getElementById('lf-keyfile').closest('label');
+        if (pL) {
+          pL.style.display = mode === 'password' ? '' : 'none';
+          if (pL.parentElement) pL.parentElement.style.gridTemplateColumns = mode === 'password' ? '1fr 1fr' : '1fr';
+        }
+        if (kL) {
+          kL.style.display = mode === 'key' ? '' : 'none';
+          if (kL.parentElement) kL.parentElement.style.gridTemplateColumns = mode === 'key' ? '1fr 1fr' : '1fr';
+        }
+      };
+      _applyAuthMode();
+      document.getElementById('lf-auth').addEventListener('change', _applyAuthMode);
+      document.getElementById('lf-legacy').checked = (params.get('legacy_ssh') || String(defaults.legacy_ssh)) === 'true';
+
+      document.getElementById('loginClose').onclick = () => this.dismiss();
+      document.getElementById('loginFields').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.connect();
+      });
+
+      // Auto-connect: query string has host + autoconnect=true
+      if (params.get('host') && params.get('autoconnect') === 'true') {
+        this.connect();
+        return;
+      }
+
+      // Resume existing session if valid
+      if (_sessionId) {
+        try {
+          const sr = await fetch(`/api/status?session=${_sessionId}`);
+          const sd = await sr.json();
+          if (sd.hostname && sd.hostname !== 'not connected') {
+            const shortHost = sd.hostname.split('.')[0].toUpperCase();
+<!--            document.title = `${shortHost} — HUD`;-->
+            this.dismiss();
+            return;
+          }
+        } catch(e) {}
+        _setSession(null);
+      }
+
+      // No query params and no valid session → show modal
+      if (!params.get('host') && !params.get('username')) {
+        this.overlay.style.display = 'flex';
+        return;
+      }
+
+      // Show modal
+      this.overlay.style.display = 'flex';
+    },
+
+    async connect() {
+      const btn = document.getElementById('loginBtn');
+      const status = document.getElementById('loginStatus');
+      btn.disabled = true;
+      btn.textContent = '⟳ CONNECTING...';
+      status.style.color = 'var(--pri)';
+      status.textContent = 'Establishing SSH session...';
+
+      const body = {
+        host:        document.getElementById('lf-host').value.trim(),
+        username:    document.getElementById('lf-user').value.trim(),
+        device_type: document.getElementById('lf-dtype').value,
+        legacy_ssh:  document.getElementById('lf-legacy').checked,
+      };
+      if (_sessionId) body.session_id = _sessionId;
+      const _authMode = document.getElementById('lf-auth').value;
+      if (_authMode === 'password') {
+        const pass = document.getElementById('lf-pass').value;
+        if (pass) body.password = pass;
+      } else {
+        const keyInput = document.getElementById('lf-keyfile');
+        if (keyInput.files && keyInput.files.length > 0) {
+          body.key_text = await keyInput.files[0].text();
+        }
+      }
+
+      if (!body.host) {
+        status.style.color = 'var(--warn)';
+        status.textContent = 'Host is required';
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+        return;
+      }
+
+      try {
+        const r = await fetch('/api/connect', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+
+        if (data.status === 'ok') {
+          _setSession(data.session_id);
+          status.textContent = `Connected to ${data.host}`;
+          const shortHost = data.host.split('.')[0].toUpperCase();
+<!--          document.title = `${shortHost} — HUD`;-->
+
+          // Show loading overlay immediately
+          let lo = document.getElementById('load-overlay');
+          if (lo) {
+            lo.style.display = 'flex';
+          } else {
+            lo = document.createElement('div');
+            lo.className = 'load-overlay';
+            lo.id = 'load-overlay';
+            lo.innerHTML = '<div class="load-title">INITIALIZING TELEMETRY</div>'
+              + '<div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>'
+              + '<div class="load-cmd" id="load-cmd">CONNECTING...</div>'
+              + '<div class="load-elapsed" id="load-elapsed"></div>'
+              + '<div class="load-steps" id="load-steps"></div>';
+            document.body.prepend(lo);
+          }
+
+          // Connect WS now so progress messages are received
+          connect();
+
+          // Dismiss modal after brief flash
+          setTimeout(() => {
+            if (this.overlay) this.overlay.style.display = 'none';
+          }, 300);
+        } else {
+          status.style.color = 'var(--red)';
+          status.textContent = data.message || 'Connection failed';
+          btn.disabled = false;
+          btn.textContent = '▶ CONNECT';
+        }
+      } catch(e) {
+        status.style.color = 'var(--red)';
+        status.textContent = `Error: ${e.message}`;
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+      }
+    },
+
+    dismiss() {
+      if (this.overlay) this.overlay.style.display = 'none';
+      if (window.location.search) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+      // Start telemetry WebSocket if not already connected
+      if (!ws || ws.readyState > WebSocket.OPEN) connect();
+    },
+  };
+
+  /* ==============================================================
+     MODULE: PROGRESS OVERLAY
+     ============================================================== */
+  let _progressTimer = null;
+  let _progressT0 = null;
+
+  function _updateProgress(p) {
+    const overlay = document.getElementById('load-overlay');
+    if (!overlay) return;
+    overlay.style.display = 'flex';
+
+    // Start client-side elapsed timer on first progress event
+    if (!_progressTimer) {
+      _progressT0 = Date.now() - (p.elapsed * 1000);
+      _progressTimer = setInterval(() => {
+        const el = document.getElementById('load-elapsed');
+        if (el) el.textContent = ((Date.now() - _progressT0) / 1000).toFixed(1) + 's';
+      }, 500);
+    }
+
+    if (p.phase === 'start') {
+      const cmd = document.getElementById('load-cmd');
+      if (cmd) cmd.textContent = 'COLLECTING ' + p.command.toUpperCase().replace(/_/g, ' ') + '...';
+    } else {
+      const pct = Math.round((p.index / p.total) * 100);
+      const bar = document.getElementById('load-bar');
+      if (bar) bar.style.width = pct + '%';
+      const cmd = document.getElementById('load-cmd');
+      if (cmd) cmd.textContent = p.command.toUpperCase().replace(/_/g, ' ') + ' \u2713';
+      _completedCmds.push(p.command);
+      const steps = document.getElementById('load-steps');
+      if (steps) steps.textContent = _completedCmds.map(
+        c => c.toUpperCase().replace(/_/g, ' ')
+      ).join(' \u00b7 ');
+    }
+  }
+
+  function _dismissOverlay() {
+    const o = document.getElementById('load-overlay');
+    if (o) o.remove();
+    _completedCmds = [];
+    if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+    _progressT0 = null;
+  }
+
+  /* ==============================================================
+     MODULE: WEBSOCKET CONNECTION
+     ============================================================== */
+  function connect() {
+    if (!_sessionId) return;
+    ws = new WebSocket(`${WS_BASE}/ws?session=${_sessionId}`);
+    ws.onopen = () => { const b = document.getElementById('conn-status'); if (b) b.remove(); };
+    ws.onmessage = (e) => {
+      try {
+        const msg = JSON.parse(e.data);
+        if (msg.error) {
+          console.warn('WS session error:', msg.error);
+          _setSession(null);
+          return;
+        }
+        if (msg._progress) {
+          _updateProgress(msg._progress);
+          return;
+        }
+        _dismissOverlay();
+        currentData = msg;
+        render(currentData);
+      } catch(x) { console.error(x); }
+    };
+    ws.onclose = () => { if (_sessionId) setTimeout(connect, 3000); };
+    ws.onerror = (e) => console.error('WS error', e);
+  }
+
+  LoginModal.init();
+    const params = new URLSearchParams(location.search);
+const devName = params.get('name');
+if(devName) document.title = `${devName} — HUD`;
+  </script>
+  </body>
+  </html>

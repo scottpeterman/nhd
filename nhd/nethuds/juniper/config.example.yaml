@@ -1,0 +1,17 @@
+device:
+#  host: ""
+#  username: "cisco"
+##  password: "cisco123"
+#  device_type: "juniper_junos"
+#  use_keys: true
+#  key_file: "~/.ssh/id_rsa"
+#  timeout: 30
+#  session_timeout: 60
+#  legacy_ssh: true
+#  password: cisco123
+
+poll_interval: 15
+
+server:
+  host: "0.0.0.0"
+  port: 8471

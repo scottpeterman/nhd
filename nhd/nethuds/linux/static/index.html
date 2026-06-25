@@ -1,0 +1,1179 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="green">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LINUX HUD</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<style>
+  :root, [data-theme="green"] {
+    --bg: #0a0a0a; --bg2: #0d1a0f; --bg3: #1a2f1a;
+    --g: #00ff41; --g2: #00cc33; --g3: #009922; --gdim: #004d15; --gdimmer: #002a0a;
+    --red: #ff3333; --amber: #ffaa00; --cyan: #40e0d0; --purple: #c080ff;
+    --mono: 'IBM Plex Mono', 'Cascadia Code', 'Fira Code', monospace;
+  }
+  [data-theme="amber"] {
+    --bg: #0a0800; --bg2: #12100a; --bg3: #2a2010;
+    --g: #ff9500; --g2: #e07800; --g3: #a85800; --gdim: #5a3200; --gdimmer: #2e1a00;
+    --red: #ff3333; --amber: #ffdd44; --cyan: #e0c060; --purple: #d0a060;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--g); font-family:var(--mono); font-size:9px; overflow-x:hidden; }
+  .header { display:flex; align-items:baseline; padding:4px 8px; border-bottom:1px solid var(--g3); gap:8px; flex-wrap:wrap; }
+  .hostname { font-size:16px; font-weight:bold; letter-spacing:2px; color:var(--g); }
+  .hsub { color:var(--g3); font-size:8px; margin-left:8px; }
+  .hdim { color:var(--gdim); font-size:8px; margin-left:8px; }
+  .header-right { margin-left:auto; display:flex; align-items:center; gap:10px; font-size:8px; }
+  .cap-tags { display:flex; gap:3px; flex-wrap:wrap; padding:1px 8px 2px; border-bottom:1px solid var(--gdimmer); }
+  .cap-tag { font-size:6px; padding:1px 4px; color:var(--g3); border:1px solid var(--gdimmer); letter-spacing:1px; }
+  .status-badge { padding:1px 6px; font-weight:bold; letter-spacing:1px; }
+  .status-nominal { color:#0a0a0a; background:var(--g); }
+  .status-warning { color:#0a0a0a; background:var(--amber); }
+  .status-alarm { color:#fff; background:var(--red); }
+  .theme-btn { background:none; border:1px solid var(--g3); color:var(--g3); padding:2px 8px; font-family:var(--mono); font-size:8px; cursor:pointer; letter-spacing:1px; }
+  .theme-btn:hover { border-color:var(--g); color:var(--g); }
+  .grid { display:grid; grid-template-columns:1fr 1fr 1fr; gap:4px; padding:4px; }
+  .col { display:flex; flex-direction:column; gap:4px; }
+  .panel { border:1px solid var(--g3); background:var(--bg2); position:relative; }
+  .panel.warning { border-color:var(--amber); }
+  .panel.alarm { border-color:var(--red); }
+  .panel-title { color:var(--g); font-size:9px; padding:3px 6px; border-bottom:1px solid var(--g3); letter-spacing:2px; font-weight:bold; }
+  .panel-body { padding:4px 6px; }
+  .tbl { width:100%; border-collapse:collapse; font-size:8px; }
+  .tbl th { color:var(--g3); font-weight:normal; text-align:left; padding:2px 4px; border-bottom:1px solid var(--gdim); letter-spacing:1px; }
+  .tbl td { padding:2px 4px; border-bottom:1px solid var(--gdimmer); }
+  .r { text-align:right; }
+  .c { text-align:center; }
+  .val { font-size:11px; font-weight:bold; }
+  .lbl { font-size:6px; color:var(--g3); letter-spacing:1px; }
+  .dot { display:inline-block; width:6px; height:6px; border-radius:50%; margin-right:3px; vertical-align:middle; }
+  .dot-up { background:var(--g); box-shadow:0 0 4px var(--g); }
+  .dot-down { background:var(--red); box-shadow:0 0 4px var(--red); }
+  .dot-warn { background:var(--amber); box-shadow:0 0 4px var(--amber); }
+  .dot-dim { background:var(--g3); }
+  .dot-blink { animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1}50%{opacity:.3} }
+  .tab { cursor:pointer; color:var(--g3); padding:1px 4px; font-size:8px; letter-spacing:1px; }
+  .tab.active { color:var(--g); border-bottom:1px solid var(--g); }
+  .scroll { overflow-y:auto; }
+  .scroll::-webkit-scrollbar { width:4px; }
+  .scroll::-webkit-scrollbar-track { background:var(--bg); }
+  .scroll::-webkit-scrollbar-thumb { background:var(--g3); border-radius:2px; }
+  .bar-bg { background:var(--gdimmer); height:8px; flex:1; border-radius:1px; overflow:hidden; }
+  .bar-fill { height:100%; border-radius:1px; }
+  .log-entry { display:flex; gap:4px; padding:2px 0; border-bottom:1px solid rgba(0,42,10,.2); font-size:8px; line-height:1.4; }
+  .log-ts { color:rgba(0,180,50,.75); min-width:78px; white-space:nowrap; }
+  .log-sev { min-width:32px; font-weight:bold; }
+  .log-src { font-weight:bold; margin-right:2px; }
+  .therm-cell { display:inline-block; width:18px; height:18px; border-radius:2px; font-size:7px; text-align:center; line-height:18px; margin:0 1px 1px 0; cursor:default; }
+  .conn-banner { position:fixed; top:50%; left:50%; transform:translate(-50%,-50%); background:var(--bg2); border:1px solid var(--g3); padding:12px 24px; font-size:11px; color:var(--g); letter-spacing:2px; z-index:100; animation:pulse 2s infinite; }
+  .footer { display:flex; justify-content:space-between; padding:3px 8px; border-top:1px solid var(--g3); font-size:7px; color:var(--g3); }
+  /* Terminal overlay */
+  .term-fab { position:fixed; bottom:20px; right:20px; width:40px; height:40px; border-radius:50%; border:1px solid var(--g3); background:var(--bg2); color:var(--g); font-size:16px; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:90; font-family:var(--mono); }
+  .term-fab:hover { border-color:var(--g); box-shadow:0 0 8px var(--gdim); }
+  .term-overlay { display:none; flex-direction:column; position:fixed; top:60px; right:20px; width:60%; height:60%; background:var(--bg); border:1px solid var(--g3); z-index:95; box-shadow:0 0 20px rgba(0,0,0,.8); resize:both; overflow:hidden; min-width:400px; min-height:200px; }
+  .term-overlay::-webkit-resizer { background:var(--g3); }
+  .term-header { display:flex; align-items:center; padding:4px 8px; border-bottom:1px solid var(--g3); cursor:move; gap:8px; }
+  .term-btn { background:none; border:1px solid var(--g3); color:var(--g3); padding:2px 8px; font-family:var(--mono); font-size:8px; cursor:pointer; }
+  .term-btn:hover { border-color:var(--g); color:var(--g); }
+  .term-body { flex:1; overflow:hidden; }
+  .term-status { font-size:7px; padding:2px 8px; color:var(--g3); border-top:1px solid var(--gdimmer); }
+  .xterm-viewport::-webkit-scrollbar { width:6px; }
+  .xterm-viewport::-webkit-scrollbar-track { background:var(--bg); }
+  .xterm-viewport::-webkit-scrollbar-thumb { background:var(--g3); border-radius:3px; }
+  /* Loading overlay */
+  .load-overlay {
+    position:fixed; inset:0; z-index:500; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:var(--mono); color:var(--g);
+  }
+  .load-overlay .load-title {
+    font-size:14px; letter-spacing:4px; margin-bottom:20px;
+    animation:pulse 2s infinite;
+  }
+  .load-overlay .load-bar-wrap {
+    width:320px; height:6px; border:1px solid var(--g3);
+    background:var(--bg2); margin-bottom:12px;
+  }
+  .load-overlay .load-bar {
+    height:100%; background:var(--g); width:0%;
+    transition:width .3s ease; box-shadow:0 0 6px var(--g);
+  }
+  .load-overlay .load-cmd {
+    font-size:9px; color:var(--g3); letter-spacing:1px; height:14px;
+  }
+  .load-overlay .load-elapsed {
+    font-size:8px; color:var(--g3); margin-top:6px;
+  }
+  .load-overlay .load-steps {
+    margin-top:14px; font-size:8px; color:var(--gdim); max-width:320px; text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<!-- ═══════ LOGIN MODAL ═══════ -->
+<div id="loginOverlay" style="
+  position:fixed; inset:0; z-index:9999;
+  background:rgba(0,0,0,0.92);
+  display:none; align-items:center; justify-content:center;
+  font-family:'Courier New','Lucida Console',monospace;
+">
+  <div id="loginBox" style="
+    border:1px solid #00ff41; background:#080a08;
+    padding:24px 28px; min-width:380px; max-width:460px;
+    box-shadow:0 0 20px rgba(0,255,65,0.15), inset 0 0 60px rgba(0,255,65,0.02);
+  ">
+    <div style="border-bottom:1px solid #004d15; padding-bottom:8px; margin-bottom:16px;
+      display:flex; justify-content:space-between; align-items:center;">
+      <span style="color:#00ff41; font-size:11px; text-transform:uppercase; letter-spacing:2px;">⬡ CONNECT TO DEVICE</span><span id="lf-hud-label" style="color:#00ff41; font-size:9px; letter-spacing:2px; margin-left:12px; opacity:0.7;"></span>
+      <span id="loginClose" style="color:#004d15; cursor:pointer; font-size:14px;" title="Use config.yaml defaults">✕</span>
+    </div>
+    <div id="loginFields" style="display:grid; gap:10px;">
+      <label style="display:grid; gap:2px;">
+        <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">HOST</span>
+        <input id="lf-host" type="text" placeholder="server.example.com" style="
+          background:#002a0a; border:1px solid #004d15; color:#00ff41;
+          font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+      </label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">USERNAME</span>
+          <input id="lf-user" type="text" placeholder="admin" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+        </label>
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">PASSWORD</span>
+          <input id="lf-pass" type="password" placeholder="password" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+        </label>
+      </div>
+      <input id="lf-dtype" type="hidden">
+        <label style="display:grid; gap:2px;">
+        <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">AUTH METHOD</span>
+        <select id="lf-auth" style="
+          background:#002a0a; border:1px solid #004d15; color:#00ff41;
+          font-family:inherit; font-size:12px; padding:6px 8px; outline:none;"><option value="password">Password</option><option value="key">SSH Key</option></select>
+      </label>
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">SSH PRIVATE KEY</span>
+          <input id="lf-keyfile" type="file" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:10px; padding:4px 6px; outline:none;">
+          <span style="color:#004d15; font-size:7px;">RSA, Ed25519, or ECDSA. Read once, never stored.</span>
+        </label>
+        <label style="display:flex; align-items:end; gap:8px; padding-bottom:6px;">
+          <input id="lf-legacy" type="checkbox" style="accent-color:#00ff41;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">LEGACY SSH</span>
+        </label>
+      </div>
+    </div>
+    <div id="loginStatus" style="margin-top:12px; font-size:10px; min-height:14px; color:#004d15;"></div>
+    <div style="display:flex; gap:10px; margin-top:14px;">
+      <button id="loginBtn" onclick="LoginModal.connect()" style="
+        flex:1; background:transparent; border:1px solid #00ff41; color:#00ff41;
+        font-family:inherit; font-size:11px; padding:8px; cursor:pointer;
+        text-transform:uppercase; letter-spacing:2px;"
+      >▶ CONNECT</button>
+      <button onclick="LoginModal.dismiss()" style="
+        background:transparent; border:1px solid #004d15; color:#004d15;
+        font-family:inherit; font-size:10px; padding:8px 14px; cursor:pointer;
+        text-transform:uppercase;" title="Skip — use config.yaml defaults"
+      >SKIP</button>
+    </div>
+  </div>
+</div>
+<!-- ═══════ END LOGIN MODAL ═══════ -->
+
+<!-- ═══════ LOADING OVERLAY ═══════ -->
+<div class="load-overlay" id="load-overlay" style="display:none">
+  <div class="load-title">INITIALIZING TELEMETRY</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+  <div class="load-cmd" id="load-cmd">CONNECTING...</div>
+  <div class="load-elapsed" id="load-elapsed"></div>
+  <div class="load-steps" id="load-steps"></div>
+</div>
+
+<div class="shell" id="app"><div class="conn-banner" id="conn-status">CONNECTING TO TELEMETRY FEED...</div></div>
+
+<!-- Terminal FAB -->
+<div class="term-fab" id="term-fab" onclick="TerminalMgr.toggle()" title="Terminal">
+  <span>&gt;_</span>
+</div>
+<!-- Terminal Overlay -->
+<div class="term-overlay" id="term-overlay">
+  <div class="term-header">
+    <span style="color:var(--g);font-size:9px;letter-spacing:1px">&rsaquo; TERMINAL</span>
+    <span style="flex:1"></span>
+    <button class="term-btn" onclick="TerminalMgr.reconnect()">RECONNECT</button>
+    <button class="term-btn" onclick="TerminalMgr.close()">CLOSE</button>
+  </div>
+  <div class="term-body" id="term-body"></div>
+  <div class="term-status" id="term-status">DISCONNECTED</div>
+</div>
+
+<script>
+/* ==============================================================
+   CONSTANTS
+   ============================================================== */
+const WS_URL=`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`;
+const SEV_COLOR={0:'var(--red)',1:'var(--red)',2:'var(--red)',3:'var(--red)',4:'var(--amber)',5:'var(--g2)',6:'var(--gdim)',7:'var(--gdim)'};
+const SEV_LABEL={0:'EMERG',1:'ALERT',2:'CRIT',3:'ERR',4:'WARN',5:'NOTIF',6:'INFO',7:'DBG'};
+const SRC_COLOR={kernel:'#e0e040',sshd:'#ff8080',sudo:'#ff8080',su:'#ff8080',pam:'#ff8080',systemd:'#40e0d0','systemd-logind':'#40e0d0','systemd-resolved':'#66bb6a',NetworkManager:'#80b0ff',dhclient:'#80b0ff',dhcpcd:'#80b0ff',networkd:'#80b0ff',docker:'#c080ff',containerd:'#c080ff',podman:'#c080ff',cron:'#66bb6a',anacron:'#66bb6a',apt:'#e08040',dpkg:'#e08040',unattended:'#e08040',nginx:'#80b0ff',apache2:'#80b0ff',haproxy:'#80b0ff',fail2ban:'#ff8080',ufw:'#ff8080',iptables:'#ff8080',nftables:'#ff8080',bird:'#40e0d0',frr:'#40e0d0',bgpd:'#40e0d0',ospfd:'#40e0d0',lldpd:'#66bb6a',snmpd:'#66bb6a','nvidia-smi':'#c080ff'};
+function srcColor(s){return SRC_COLOR[(s||'').replace(/\[\d+\]/,'')]||'#4dc880';}
+
+const CAP_LABELS={has_systemd:'systemd',has_openrc:'openrc',has_runit:'runit',has_docker:'docker',has_podman:'podman',has_nomad:'nomad',has_nvidia:'nvidia',has_amdgpu:'amdgpu',has_lm_sensors:'lm-sensors',has_thermal:'thermal',has_lldpd:'lldpd',has_frr:'frr',has_bird:'bird',has_proxmox:'proxmox',has_libvirt:'libvirt',has_zfs:'zfs',has_lvm:'lvm',has_smartctl:'smartctl',is_container:'container',is_wsl:'wsl'};
+
+let ws=null,currentData=null,logFilter='all',prevData=null;
+
+/* ==============================================================
+   THEME
+   ============================================================== */
+const Theme={
+  current(){return document.documentElement.getAttribute('data-theme')||'green'},
+  toggle(){const n=this.current()==='green'?'amber':'green';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('hud-theme',n);if(currentData)render(currentData)},
+  init(){const s=localStorage.getItem('hud-theme');if(s)document.documentElement.setAttribute('data-theme',s)},
+  label(){return this.current()==='green'?'AMBER':'GREEN'}
+};
+Theme.init();
+
+/* ==============================================================
+   DRAG TERMINAL
+   ============================================================== */
+(function(){const hd=document.querySelector('.term-header'),ol=document.getElementById('term-overlay');let d=false,ox,oy;hd.addEventListener('mousedown',e=>{if(e.target.closest('.term-btn'))return;d=true;ox=e.clientX-ol.offsetLeft;oy=e.clientY-ol.offsetTop;e.preventDefault()});document.addEventListener('mousemove',e=>{if(!d)return;ol.style.left=(e.clientX-ox)+'px';ol.style.top=(e.clientY-oy)+'px';ol.style.right='auto'});document.addEventListener('mouseup',()=>{d=false})})();
+
+/* ==============================================================
+   WEBSOCKET
+   ============================================================== */
+function connect(){
+  ws=new WebSocket(WS_URL);
+  ws.onopen=()=>{
+    const b=document.getElementById('conn-status');if(b)b.remove();
+    // Show loading overlay on first connect
+    const lo=document.getElementById('load-overlay');
+    if(lo && !currentData) lo.style.display='flex';
+  };
+  ws.onmessage=(e)=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg._progress){
+        _updateProgress(msg._progress);
+        return;
+      }
+      _dismissOverlay();
+      prevData=currentData;
+      currentData=msg;
+      render(currentData);
+    }catch(x){console.error(x)}
+  };
+  ws.onclose=()=>setTimeout(connect,3000);
+  ws.onerror=(e)=>console.error('WS error',e);
+}
+
+/* ==============================================================
+   PROGRESS OVERLAY
+   ============================================================== */
+let _progressTimer=null,_progressT0=null,_completedCmds=[];
+
+function _updateProgress(p){
+  const overlay=document.getElementById('load-overlay');
+  if(!overlay) return;
+  overlay.style.display='flex';
+
+  // Start client-side elapsed timer on first progress event
+  if(!_progressTimer){
+    _progressT0=Date.now()-(p.elapsed*1000);
+    _progressTimer=setInterval(()=>{
+      const el=document.getElementById('load-elapsed');
+      if(el) el.textContent=((Date.now()-_progressT0)/1000).toFixed(1)+'s';
+    },500);
+  }
+
+  if(p.phase==='start'){
+    const cmd=document.getElementById('load-cmd');
+    if(cmd) cmd.textContent='COLLECTING '+p.command.toUpperCase().replace(/_/g,' ')+'...';
+  } else {
+    const pct=Math.round((p.index/p.total)*100);
+    const bar=document.getElementById('load-bar');
+    if(bar) bar.style.width=pct+'%';
+    const cmd=document.getElementById('load-cmd');
+    if(cmd) cmd.textContent=p.command.toUpperCase().replace(/_/g,' ')+' \u2713';
+    _completedCmds.push(p.command);
+    const steps=document.getElementById('load-steps');
+    if(steps) steps.textContent=_completedCmds.map(
+      c=>c.toUpperCase().replace(/_/g,' ')
+    ).join(' \u00b7 ');
+  }
+}
+
+function _dismissOverlay(){
+  const o=document.getElementById('load-overlay');
+  if(o) o.remove();
+  _completedCmds=[];
+  if(_progressTimer){clearInterval(_progressTimer);_progressTimer=null;}
+  _progressT0=null;
+}
+
+/* ==============================================================
+   UTILITY FUNCTIONS
+   ============================================================== */
+function dot(up,blink){return`<span class="dot dot-${up?'up':'down'}${blink?' dot-blink':''}"></span>`}
+function dotCls(cls,blink){return`<span class="dot dot-${cls}${blink?' dot-blink':''}"></span>`}
+
+function gaugeRing(pct,size,color,label){
+  const r=size/2-3,c=Math.PI*2*r,off=c-(pct/100)*c;
+  return`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--gdimmer)" stroke-width="3"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size/2} ${size/2})" stroke-linecap="round"/><text x="${size/2}" y="${size/2-1}" fill="${color}" font-size="8" font-family="var(--mono)" text-anchor="middle" font-weight="bold">${pct.toFixed(0)}%</text><text x="${size/2}" y="${size/2+7}" fill="var(--g3)" font-size="5" font-family="var(--mono)" text-anchor="middle">${label}</text></svg>`;
+}
+
+function fmtBytes(b){
+  if(b>=1e12) return (b/1e12).toFixed(1)+'T';
+  if(b>=1e9) return (b/1e9).toFixed(1)+'G';
+  if(b>=1e6) return (b/1e6).toFixed(1)+'M';
+  if(b>=1e3) return (b/1e3).toFixed(1)+'K';
+  return b+'B';
+}
+
+function fmtKB(kb){
+  if(kb>=1048576) return (kb/1048576).toFixed(1)+'G';
+  if(kb>=1024) return (kb/1024).toFixed(0)+'M';
+  return kb+'K';
+}
+
+function fmtBytesHuman(b){
+  if(b>=1073741824) return (b/1073741824).toFixed(1)+' GB';
+  if(b>=1048576) return (b/1048576).toFixed(1)+' MB';
+  if(b>=1024) return (b/1024).toFixed(0)+' KB';
+  return b+' B';
+}
+
+function thermColor(t){
+  if(t<40) return 'var(--g3)';
+  if(t<55) return 'var(--g)';
+  if(t<70) return '#cccc00';
+  if(t<80) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function barColor(pct){
+  if(pct<60) return 'var(--g)';
+  if(pct<80) return 'var(--amber)';
+  return 'var(--red)';
+}
+
+function bar(pct,height){
+  const col=barColor(pct);
+  return `<div style="display:flex;align-items:center;gap:4px"><div class="bar-bg" style="height:${height||8}px"><div class="bar-fill" style="width:${Math.min(pct,100)}%;background:${col}"></div></div><span style="font-size:6px;color:${col};font-weight:bold;min-width:22px;text-align:right">${pct}%</span></div>`;
+}
+
+function cap(d,key){return d.caps && d.caps[key]}
+
+/* ==============================================================
+   RENDER: LLDP RADAR
+   ============================================================== */
+function renderRadar(neighbors,size){
+  if(!neighbors||!neighbors.length) return '<div style="text-align:center;color:var(--g3);padding:20px">NO LLDP DATA<div style="font-size:7px;margin-top:4px">Install lldpd for neighbor discovery</div></div>';
+  const cx=size/2,cy=size/2,r=size/2-30;
+  let s=`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
+  for(let i=1;i<=3;i++) s+=`<circle cx="${cx}" cy="${cy}" r="${r*i/3}" fill="none" stroke="var(--gdimmer)" stroke-width="0.5"/>`;
+  s+=`<line x1="${cx}" y1="${cy-r}" x2="${cx}" y2="${cy+r}" stroke="var(--gdimmer)" stroke-width="0.5"/>`;
+  s+=`<line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="var(--gdimmer)" stroke-width="0.5"/>`;
+  s+=`<rect x="${cx-16}" y="${cy-7}" width="32" height="14" fill="var(--bg)" stroke="var(--g)" stroke-width="1" rx="2"/>`;
+  s+=`<text x="${cx}" y="${cy+2}" fill="var(--g)" font-size="5" font-family="var(--mono)" text-anchor="middle" font-weight="bold">SELF</text>`;
+  neighbors.forEach((n,i)=>{
+    const angle=(i/neighbors.length)*Math.PI*2-Math.PI/2;
+    const nx=cx+r*0.8*Math.cos(angle),ny=cy+r*0.8*Math.sin(angle);
+    s+=`<line x1="${cx}" y1="${cy}" x2="${nx}" y2="${ny}" stroke="var(--g3)" stroke-width="1" opacity="0.4"/>`;
+    const lbl=(n.device||'unknown').substring(0,12);
+    const w=Math.max(lbl.length*4+8,32);
+    s+=`<rect x="${nx-w/2}" y="${ny-7}" width="${w}" height="14" fill="var(--bg)" stroke="var(--g2)" stroke-width="0.5" rx="2"/>`;
+    s+=`<text x="${nx}" y="${ny+2}" fill="var(--g2)" font-size="4.5" font-family="var(--mono)" text-anchor="middle">${lbl}</text>`;
+    s+=`<text x="${nx}" y="${ny+12}" fill="var(--g3)" font-size="4" font-family="var(--mono)" text-anchor="middle">${n.local_intf||''}</text>`;
+  });
+  s+='</svg>';
+  return s;
+}
+
+/* ==============================================================
+   PANEL RENDER FUNCTIONS
+   ============================================================== */
+
+function renderHeader(d){
+  const meta=d.meta||{},sys=d.system||{},caps=d.caps||{};
+  const cpu=d.cpu||{},mem=d.memory||{},thermal=d.thermal||[],storage=d.storage||[];
+  const svcs=d.services||d.services_rc||{};
+
+  const failedSvcs=svcs.failed_count||0;
+  const highTemp=thermal.some(t=>t.temp>=80);
+  const highDisk=storage.some(s=>s.pct>=90);
+  let status='NOMINAL',statusCls='status-nominal';
+  if(failedSvcs>0||highDisk){status='WARNING';statusCls='status-warning';}
+  if(highTemp){status='ALARM';statusCls='status-alarm';}
+  if(meta.error){status=meta.stale?'STALE':'DEGRADED';statusCls='status-warning';}
+
+  let h=`<div class="header">`;
+  h+=`<span class="hostname">${sys.hostname||meta.hostname||'LINUX'}</span>`;
+  h+=`<span class="hsub">${sys.distro||caps.distro_name||'---'}</span>`;
+  h+=`<span class="hdim">${sys.kernel||'---'}</span>`;
+  h+=`<span class="hdim">${sys.arch||''}</span>`;
+  h+=`<div class="header-right">`;
+  h+=`<span style="color:var(--g3)">UPTIME</span> <span style="color:var(--g);font-weight:bold">${sys.uptime_human||'---'}</span>`;
+  h+=` <span class="status-badge ${statusCls}">${status}</span>`;
+  h+=` <button class="theme-btn" onclick="Theme.toggle()">◑ ${Theme.label()}</button>`;
+  h+=`</div></div>`;
+
+  // Capability tags
+  const activeCaps=Object.entries(CAP_LABELS).filter(([k])=>caps[k]).map(([,v])=>v);
+  if(activeCaps.length){
+    h+=`<div class="cap-tags">`;
+    for(const c of activeCaps) h+=`<span class="cap-tag">${c}</span>`;
+    h+=`</div>`;
+  }
+  return h;
+}
+
+function renderCompute(d){
+  const cpu=d.cpu||{},mem=d.memory||{};
+  const cpuColor=cpu.cpu_pct>80?'var(--red)':cpu.cpu_pct>50?'var(--amber)':'var(--g)';
+  const memColor=mem.mem_pct>80?'var(--red)':mem.mem_pct>50?'var(--amber)':'var(--g)';
+  let h=`<div class="panel"><div class="panel-title">COMPUTE</div><div class="panel-body">`;
+  h+=`<div style="display:flex;align-items:center;gap:8px">`;
+  h+=gaugeRing(cpu.cpu_pct||0,55,cpuColor,'CPU');
+  h+=gaugeRing(mem.mem_pct||0,55,memColor,'MEM');
+  h+=`<div style="font-size:7px;flex:1">`;
+  h+=`<div>Load: <b style="color:var(--g)">${cpu.load_1||0}</b> / ${cpu.load_5||0} / ${cpu.load_15||0}</div>`;
+  h+=`<div>CPUs: <b>${cpu.cpu_count||0}</b></div>`;
+  h+=`<div>RAM: <b>${fmtKB(mem.total_kb||0)}</b> total, <b style="color:var(--g)">${fmtKB(mem.available_kb||0)}</b> free</div>`;
+  if(mem.swap_total_kb>0) h+=`<div>Swap: ${fmtKB(mem.swap_used_kb||0)} / ${fmtKB(mem.swap_total_kb||0)} (${mem.swap_pct}%)</div>`;
+  h+=`</div></div>`;
+  if(cpu.top_processes&&cpu.top_processes.length){
+    h+=`<div style="margin-top:4px;font-size:7px"><b style="color:var(--g3);letter-spacing:1px">TOP PROCESSES</b></div>`;
+    for(const p of cpu.top_processes.slice(0,7)){
+      if(p.cpu<=0&&p.mem<=0) continue;
+      h+=`<div style="display:flex;justify-content:space-between;font-size:7px;padding:1px 0;color:var(--g2)"><span style="max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${p.command}</span><span style="color:var(--g3)">${p.cpu}%</span></div>`;
+    }
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderThermal(d){
+  const thermal=d.thermal||[];
+  if(!thermal.length) return '';
+  const maxTemp=Math.max(...thermal.map(t=>t.temp));
+  const cls=maxTemp>=80?'panel alarm':maxTemp>=70?'panel warning':'panel';
+  let h=`<div class="${cls}"><div class="panel-title">THERMAL SENSORS</div><div class="panel-body">`;
+  h+=`<div style="display:flex;flex-wrap:wrap;gap:1px">`;
+  for(const t of thermal) h+=`<div class="therm-cell" style="background:${thermColor(t.temp)};color:#000" title="${t.name}: ${t.temp}°C">${Math.round(t.temp)}</div>`;
+  h+=`</div><div style="margin-top:3px;font-size:7px;color:var(--g3)">`;
+  for(const t of thermal) h+=`<div style="display:flex;justify-content:space-between;padding:1px 0"><span>${t.name}</span><span style="color:${thermColor(t.temp)};font-weight:bold">${t.temp}°C</span></div>`;
+  h+=`</div></div></div>`;
+  return h;
+}
+
+function renderGpuNvidia(d){
+  const gpu=d.gpu_nvidia||{};
+  const gpus=gpu.gpus||[];
+  if(!gpus.length) return '';
+  let h='';
+  for(const g of gpus){
+    const tempCol=thermColor(g.temp_c||0);
+    const memPct=g.mem_total_mb?(g.mem_used_mb/g.mem_total_mb*100).toFixed(0):0;
+    h+=`<div class="panel"><div class="panel-title">GPU ${g.index!==undefined?g.index:''}: ${g.name||'NVIDIA'}</div><div class="panel-body">`;
+    h+=`<div style="display:flex;align-items:center;gap:8px">`;
+    h+=gaugeRing(g.gpu_util_pct||0,55,g.gpu_util_pct>80?'var(--red)':g.gpu_util_pct>50?'var(--amber)':'var(--g)','CORE');
+    h+=gaugeRing(Number(memPct),55,memPct>80?'var(--red)':memPct>50?'var(--amber)':'var(--g)','VRAM');
+    h+=`<div style="font-size:7px;flex:1">`;
+    h+=`<div>Temp: <b style="color:${tempCol}">${g.temp_c}°C</b></div>`;
+    h+=`<div>VRAM: <b>${g.mem_used_mb||0}</b> / ${g.mem_total_mb||0} MB</div>`;
+    if(g.power_draw_w) h+=`<div>Power: <b>${g.power_draw_w}W</b> / ${g.power_limit_w||'---'}W</div>`;
+    if(g.clock_core_mhz) h+=`<div>Clocks: ${g.clock_core_mhz} / ${g.clock_mem_mhz||'---'} MHz</div>`;
+    if(g.fan_pct!==undefined) h+=`<div>Fan: ${g.fan_pct}%</div>`;
+    if(g.pstate) h+=`<div>P-State: ${g.pstate}</div>`;
+    h+=`</div></div>`;
+    h+=`</div></div>`;
+  }
+  // GPU processes
+  const procs=gpu.processes||[];
+  if(procs.length){
+    h+=`<div class="panel"><div class="panel-title">GPU PROCESSES</div><div class="panel-body">`;
+    for(const p of procs){
+      h+=`<div style="display:flex;justify-content:space-between;font-size:7px;padding:1px 0;color:var(--g2)"><span>${p.name}</span><span style="color:var(--g3)">${p.mem_mb} MB</span></div>`;
+    }
+    h+=`</div></div>`;
+  }
+  return h;
+}
+
+function renderGpuAmd(d){
+  const gpu=d.gpu_amd||{};
+  const gpus=gpu.gpus||[];
+  if(!gpus.length) return '';
+  let h='';
+  for(const g of gpus){
+    const memPct=g.mem_total_mb?(g.mem_used_mb/g.mem_total_mb*100).toFixed(0):0;
+    h+=`<div class="panel"><div class="panel-title">GPU: ${g.card||'AMD'}</div><div class="panel-body">`;
+    h+=`<div style="display:flex;align-items:center;gap:8px">`;
+    h+=gaugeRing(g.gpu_util_pct||0,55,g.gpu_util_pct>80?'var(--red)':'var(--g)','CORE');
+    if(g.mem_total_mb) h+=gaugeRing(Number(memPct),55,'var(--g)','VRAM');
+    h+=`<div style="font-size:7px;flex:1">`;
+    if(g.temp_c) h+=`<div>Temp: <b style="color:${thermColor(g.temp_c)}">${g.temp_c}°C</b></div>`;
+    if(g.mem_total_mb) h+=`<div>VRAM: ${g.mem_used_mb} / ${g.mem_total_mb} MB</div>`;
+    h+=`</div></div></div></div>`;
+  }
+  return h;
+}
+
+function renderStorage(d){
+  const storage=d.storage||[];
+  if(!storage.length) return '';
+  let h=`<div class="panel"><div class="panel-title">STORAGE</div><div class="panel-body">`;
+  for(const s of storage){
+    h+=`<div style="margin-bottom:4px">`;
+    h+=`<div style="display:flex;justify-content:space-between;font-size:7px;margin-bottom:1px"><span style="color:var(--g)"><b>${s.mount}</b> <span style="color:var(--g3)">${s.fstype}</span></span><span style="color:${barColor(s.pct)};font-weight:bold">${s.pct}%</span></div>`;
+    h+=`<div style="display:flex;align-items:center;gap:4px"><div class="bar-bg"><div class="bar-fill" style="width:${s.pct}%;background:${barColor(s.pct)}"></div></div><span style="font-size:6px;color:var(--g3)">${s.used}/${s.size}</span></div>`;
+    h+=`</div>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderZfs(d){
+  const zfs=d.zfs||{};
+  const pools=zfs.pools||[];
+  if(!pools.length) return '';
+  let h=`<div class="panel"><div class="panel-title">ZFS POOLS</div><div class="panel-body">`;
+  for(const p of pools){
+    const total=p.size||1,used=p.alloc||0;
+    const pct=Math.round(used/total*100);
+    h+=`<div style="margin-bottom:4px">`;
+    h+=`<div style="display:flex;justify-content:space-between;font-size:7px;margin-bottom:1px"><span><b style="color:var(--g)">${p.name}</b></span><span style="color:${p.health==='ONLINE'?'var(--g)':'var(--red)'};font-weight:bold">${p.health}</span></div>`;
+    h+=bar(pct);
+    h+=`<div style="font-size:6px;color:var(--g3);margin-top:1px">Used: ${fmtBytesHuman(used)} / ${fmtBytesHuman(total)} | Frag: ${p.frag}%</div>`;
+    h+=`</div>`;
+  }
+  if(zfs.health_summary && !zfs.health_summary.includes('healthy')) h+=`<div style="font-size:7px;color:var(--amber);margin-top:3px;white-space:pre-wrap">${zfs.health_summary}</div>`;
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderLvm(d){
+  const lvm=d.lvm||{};
+  const vgs=lvm.vgs||[];
+  if(!vgs.length) return '';
+  let h=`<div class="panel"><div class="panel-title">LVM</div><div class="panel-body"><div class="scroll" style="max-height:120px">`;
+  h+=`<table class="tbl"><thead><tr><th>VG</th><th class="r">SIZE</th><th class="r">FREE</th><th class="r">PVs</th><th class="r">LVs</th></tr></thead><tbody>`;
+  for(const v of vgs) h+=`<tr><td><b>${v.name}</b></td><td class="r">${v.size}G</td><td class="r" style="color:var(--g)">${v.free}G</td><td class="r">${v.pvs}</td><td class="r">${v.lvs}</td></tr>`;
+  h+=`</tbody></table></div></div></div>`;
+  return h;
+}
+
+function renderSmart(d){
+  const smart=d.smart||[];
+  if(!smart.length) return '';
+  let h=`<div class="panel"><div class="panel-title">DISK HEALTH</div><div class="panel-body">`;
+  for(const disk of smart){
+    const ok=disk.passed;
+    h+=`<div style="display:flex;justify-content:space-between;font-size:7px;padding:2px 0;border-bottom:1px solid var(--gdimmer)">`;
+    h+=`<span>${dot(ok,!ok)}<b>${disk.device}</b></span>`;
+    h+=`<span style="color:${ok?'var(--g)':'var(--red)'}">${ok?'PASSED':'FAIL'}</span>`;
+    if(disk.temperature) h+=`<span style="color:${thermColor(disk.temperature)}">${disk.temperature}°C</span>`;
+    if(disk.power_on_hours) h+=`<span style="color:var(--g3)">${Math.round(disk.power_on_hours/24)}d</span>`;
+    h+=`</div>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderLldp(d){
+  const lldp=d.lldp||[];
+  const radarSize=Math.min(320,window.innerWidth/3-40);
+  let h=`<div class="panel"><div class="panel-title">LLDP TOPOLOGY</div><div class="panel-body" style="text-align:center">`;
+  h+=renderRadar(lldp,radarSize);
+  if(lldp.length) h+=`<div style="font-size:7px;color:var(--g3);margin-top:2px">${lldp.length} NEIGHBORS</div>`;
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderInterfaces(d){
+  const intfs=d.interfaces||[];
+  let h=`<div class="panel"><div class="panel-title">NETWORK INTERFACES (${intfs.length})</div><div class="panel-body"><div class="scroll" style="max-height:220px">`;
+  h+=`<table class="tbl"><thead><tr><th>INTERFACE</th><th>ADDRESSES</th><th class="r">SPEED</th><th class="r">TX/RX</th><th class="c">STATE</th></tr></thead><tbody>`;
+  for(const i of intfs){
+    const up=i.operstate==='UP'||i.operstate==='UNKNOWN';
+    const addrs=(i.addresses||[]).join(', ');
+    h+=`<tr><td>${dot(up,false)}<b>${i.name}</b></td>`;
+    h+=`<td style="font-size:7px;color:var(--g3);max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${addrs}">${addrs}</td>`;
+    h+=`<td class="r" style="color:var(--g2)">${i.speed||'---'}</td>`;
+    h+=`<td class="r" style="font-size:7px;color:var(--g3)">${fmtBytes(i.tx_bytes||0)}/${fmtBytes(i.rx_bytes||0)}</td>`;
+    h+=`<td class="c" style="color:${up?'var(--g)':'var(--red)'}"><b>${i.operstate}</b></td></tr>`;
+  }
+  h+=`</tbody></table></div></div></div>`;
+  return h;
+}
+
+function renderRouting(d){
+  const routes=d.routes||{};
+  let h=`<div class="panel"><div class="panel-title">ROUTING</div><div class="panel-body">`;
+  h+=`<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Default Gateway</span><b style="color:var(--g)">${routes.default_gw||'---'}</b></div>`;
+  h+=`<div style="display:flex;justify-content:space-between;margin-bottom:3px"><span>Total Routes</span><b style="color:var(--g)">${routes.total||0}</b></div>`;
+  const protos=routes.protocols||{};
+  for(const [p,count] of Object.entries(protos)) h+=`<div style="display:flex;justify-content:space-between;font-size:7px;color:var(--g3)"><span>${p.toUpperCase()}</span><span>${count}</span></div>`;
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderFrr(d){
+  const frr=d.frr||{};
+  let h='';
+
+  // BGP panel
+  const bgp=frr.bgp_summary||{};
+  if(bgp && !bgp._error){
+    const peers=[];
+    // Parse FRR JSON BGP summary (ipv4Unicast.peers)
+    const af=bgp.ipv4Unicast||bgp.ipv6Unicast||{};
+    const peerMap=af.peers||{};
+    for(const [ip,pd] of Object.entries(peerMap)){
+      peers.push({ip,asn:pd.remoteAs||'',state:pd.state||'',pfx:pd.pfxRcd||0,uptime:pd.peerUptime||''});
+    }
+    if(peers.length||bgp._raw){
+      const allUp=peers.every(p=>p.state==='Established');
+      h+=`<div class="${allUp?'panel':'panel alarm'}"><div class="panel-title">BGP PEERING TABLE</div><div class="panel-body">`;
+      if(peers.length){
+        h+=`<table class="tbl"><thead><tr><th>NEIGHBOR</th><th class="c">ASN</th><th class="c">ST</th><th class="r">PFX RCV</th><th class="r">UPTIME</th></tr></thead><tbody>`;
+        for(const p of peers){
+          const up=p.state==='Established';
+          h+=`<tr><td style="color:${up?'var(--g)':'var(--red)'}">${p.ip}</td>`;
+          h+=`<td class="c" style="color:var(--g3)">${p.asn}</td>`;
+          h+=`<td class="c">${dot(up,!up)}</td>`;
+          h+=`<td class="r"><b style="color:${p.pfx?'var(--g2)':'var(--gdim)'}">${p.pfx}</b></td>`;
+          h+=`<td class="r" style="font-size:7px;color:var(--g3)">${p.uptime}</td></tr>`;
+        }
+        h+=`</tbody></table>`;
+        h+=`<div style="margin-top:3px;font-size:7px;color:var(--g3);text-align:center">${peers.length} PEERS | ${peers.reduce((s,p)=>s+(p.pfx||0),0)} PFX RCV</div>`;
+      } else if(bgp._raw){
+        h+=`<pre style="font-size:7px;color:var(--g2);white-space:pre-wrap;max-height:180px;overflow-y:auto">${bgp._raw}</pre>`;
+      }
+      h+=`</div></div>`;
+    }
+  }
+
+  // OSPF panel
+  const ospf=frr.ospf_neighbors||{};
+  if(ospf && !ospf._error){
+    const neis=[];
+    // Parse FRR JSON OSPF (neighbors keyed by interface)
+    if(ospf.default||ospf.neighbors){
+      const src=ospf.default||ospf;
+      for(const [intf,list] of Object.entries(src)){
+        if(!Array.isArray(list)) continue;
+        for(const n of list) neis.push({id:n.nbrNbridString||n.neighborId||'',intf,state:n.nbrState||n.converged||'',area:n.areaId||'',priority:n.nbrPriority||0});
+      }
+    }
+    if(neis.length){
+      h+=`<div class="panel"><div class="panel-title">OSPF ADJACENCIES (${neis.length})</div><div class="panel-body"><div class="scroll" style="max-height:180px">`;
+      for(const o of neis){
+        const full=/full/i.test(o.state);
+        h+=`<div style="padding:2px 0;border-bottom:1px solid var(--gdimmer)">${dot(full,!full)}<span class="val" style="font-size:9px">${o.id}</span> <span style="font-size:8px;color:var(--g3)">${o.state.toUpperCase()}</span>`;
+        h+=`<div style="font-size:7px;color:var(--g3);margin-left:8px">${o.intf} | Area ${o.area}</div></div>`;
+      }
+      h+=`</div></div></div>`;
+    }
+  }
+
+  // FRR version footer
+  if(frr.version) h+=`<div style="font-size:6px;color:var(--gdim);padding:1px 6px">${frr.version}</div>`;
+  return h;
+}
+
+function renderBird(d){
+  const bird=d.bird||{};
+  const protos=bird.protocols||[];
+  if(!protos.length) return '';
+  let h=`<div class="panel"><div class="panel-title">BIRD ROUTING</div><div class="panel-body"><div class="scroll" style="max-height:180px">`;
+  h+=`<table class="tbl"><thead><tr><th>PROTOCOL</th><th>TYPE</th><th class="c">STATE</th><th>INFO</th></tr></thead><tbody>`;
+  for(const p of protos){
+    const up=p.state==='up';
+    h+=`<tr><td>${dot(up,false)}<b>${p.name}</b></td><td style="color:var(--g3)">${p.proto}</td><td class="c" style="color:${up?'var(--g)':'var(--red)'}">${p.state}</td><td style="font-size:7px;color:var(--g3)">${p.info}</td></tr>`;
+  }
+  h+=`</tbody></table></div>`;
+  if(bird.route_count) h+=`<div style="font-size:7px;color:var(--g3);margin-top:2px;text-align:center">${bird.route_count} ROUTES</div>`;
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderConnections(d){
+  const conns=d.connections||{};
+  let h=`<div class="panel"><div class="panel-title">CONNECTIONS</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:6px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${conns.tcp_established||0}</div><div class="lbl">ESTABLISHED</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g2)">${conns.tcp_listen||0}</div><div class="lbl">LISTENING</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g3)">${conns.udp||0}</div><div class="lbl">UDP</div></div>`;
+  h+=`</div>`;
+  if(conns.listeners&&conns.listeners.length){
+    h+=`<div style="font-size:7px;color:var(--g3);margin-top:2px"><b style="letter-spacing:1px">LISTENERS</b></div>`;
+    for(const l of conns.listeners.slice(0,12)) h+=`<div style="display:flex;justify-content:space-between;font-size:7px;padding:1px 0"><span style="color:var(--g2)">${l.address}</span><span style="color:var(--g3)">${l.process}</span></div>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderServices(d){
+  const svcs=d.services||{};
+  const svcList=svcs.services||[];
+  const failedList=svcList.filter(s=>s.active==='failed');
+  const cls=failedList.length?'panel warning':'panel';
+  let h=`<div class="${cls}"><div class="panel-title">SERVICES <span style="font-size:7px;color:var(--g3);font-weight:normal">${svcs.init||'systemd'}</span></div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:4px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${svcs.active_count||0}</div><div class="lbl">ACTIVE</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:${failedList.length?'var(--red)':'var(--g3)'}">${failedList.length}</div><div class="lbl">FAILED</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g3)">${svcs.total||0}</div><div class="lbl">TOTAL</div></div>`;
+  h+=`</div>`;
+  if(failedList.length){
+    h+=`<div style="margin-top:2px">`;
+    for(const f of failedList) h+=`<div style="padding:2px 0;border-bottom:1px solid rgba(255,51,51,.15)">${dot(false,true)}<b style="color:var(--red)">${f.unit}</b> <span style="font-size:7px;color:var(--g3)">${f.description||''}</span></div>`;
+    h+=`</div>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderServicesRc(d){
+  const svcs=d.services_rc||{};
+  const svcList=svcs.services||[];
+  const failedList=svcList.filter(s=>s.active==='crashed'||s.active==='stopped');
+  const cls=svcs.failed_count?'panel warning':'panel';
+  let h=`<div class="${cls}"><div class="panel-title">SERVICES <span style="font-size:7px;color:var(--g3);font-weight:normal">openrc</span></div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:4px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${svcs.active_count||0}</div><div class="lbl">STARTED</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:${svcs.failed_count?'var(--red)':'var(--g3)'}">${svcs.failed_count||0}</div><div class="lbl">STOPPED</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g3)">${svcs.total||0}</div><div class="lbl">TOTAL</div></div>`;
+  h+=`</div></div></div>`;
+  return h;
+}
+
+function renderDocker(d){
+  const dk=d.docker||{};
+  const containers=dk.containers||[];
+  if(!containers.length && !dk.total) return '';
+  let h=`<div class="panel"><div class="panel-title">DOCKER CONTAINERS</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:4px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${dk.running||0}</div><div class="lbl">RUNNING</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:${dk.stopped?'var(--amber)':'var(--g3)'}">${dk.stopped||0}</div><div class="lbl">STOPPED</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g3)">${dk.images||0}</div><div class="lbl">IMAGES</div></div>`;
+  h+=`</div>`;
+  if(containers.length){
+    h+=`<div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>CONTAINER</th><th>IMAGE</th><th class="c">STATE</th><th class="r">CPU</th><th class="r">MEM</th></tr></thead><tbody>`;
+    for(const c of containers){
+      const running=c.state==='running';
+      const stats=c.stats||{};
+      h+=`<tr><td>${dot(running,false)}<b>${c.name}</b></td>`;
+      h+=`<td style="font-size:7px;color:var(--g3);max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${c.image}">${c.image}</td>`;
+      h+=`<td class="c" style="color:${running?'var(--g)':'var(--g3)'}"><b>${c.state}</b></td>`;
+      h+=`<td class="r" style="color:var(--g2)">${stats.cpu_pct||'---'}</td>`;
+      h+=`<td class="r" style="font-size:7px;color:var(--g3)">${stats.mem_usage||'---'}</td></tr>`;
+    }
+    h+=`</tbody></table></div>`;
+  }
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderPodman(d){
+  const pm=d.podman||{};
+  const containers=pm.containers||[];
+  if(!containers.length) return '';
+  let h=`<div class="panel"><div class="panel-title">PODMAN CONTAINERS</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:4px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${pm.running||0}</div><div class="lbl">RUNNING</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g3)">${pm.stopped||0}</div><div class="lbl">STOPPED</div></div>`;
+  h+=`</div>`;
+  h+=`<div class="scroll" style="max-height:150px"><table class="tbl"><thead><tr><th>CONTAINER</th><th>IMAGE</th><th class="c">STATE</th></tr></thead><tbody>`;
+  for(const c of containers){
+    const running=c.state==='running';
+    h+=`<tr><td>${dot(running,false)}<b>${c.name}</b></td><td style="font-size:7px;color:var(--g3)">${c.image}</td><td class="c" style="color:${running?'var(--g)':'var(--g3)'}">${c.state}</td></tr>`;
+  }
+  h+=`</tbody></table></div></div></div>`;
+  return h;
+}
+
+function renderNomad(d){
+  const nm=d.nomad||{};
+  const agent=nm.agent||{};
+  const jobs=nm.jobs||[];
+  const allocs=nm.allocations||[];
+  if(!jobs.length && !agent.name) return '';
+
+  let h=`<div class="panel"><div class="panel-title">NOMAD`;
+  if(agent.datacenter) h+=` <span style="font-size:7px;color:var(--g3);font-weight:normal">${agent.datacenter}</span>`;
+  h+=`</div><div class="panel-body">`;
+
+  // Summary counters
+  h+=`<div style="display:flex;gap:12px;justify-content:center;margin-bottom:4px">`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${nm.total_jobs||0}</div><div class="lbl">JOBS</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:var(--g)">${nm.running_allocs||0}</div><div class="lbl">RUNNING</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="color:${nm.failed_allocs?'var(--red)':'var(--g3)'}">${nm.failed_allocs||0}</div><div class="lbl">FAILED</div></div>`;
+  h+=`</div>`;
+
+  // Job table
+  if(jobs.length){
+    h+=`<div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>JOB</th><th>TYPE</th><th class="c">STATUS</th><th class="r">PRI</th></tr></thead><tbody>`;
+    for(const j of jobs){
+      const running=j.status==='running';
+      const dead=j.status==='dead';
+      const col=running?'var(--g)':dead?'var(--g3)':'var(--amber)';
+      h+=`<tr><td>${dot(running,!running&&!dead)}<b>${j.name}</b></td>`;
+      h+=`<td style="font-size:7px;color:var(--g3)">${j.type}</td>`;
+      h+=`<td class="c" style="color:${col}"><b>${j.status}</b></td>`;
+      h+=`<td class="r" style="color:var(--g3)">${j.priority}</td></tr>`;
+    }
+    h+=`</tbody></table></div>`;
+  }
+
+  // Agent footer
+  if(agent.name){
+    h+=`<div style="font-size:6px;color:var(--gdim);margin-top:3px">${agent.name} | Nomad ${agent.version||''} | ${agent.region||''}</div>`;
+  }
+
+  h+=`</div></div>`;
+  return h;
+}
+
+function renderProxmox(d){
+  const px=d.proxmox||{};
+  const qemu=px.qemu||[],lxc=px.lxc||[];
+  if(!qemu.length&&!lxc.length) return '';
+  let h=`<div class="panel"><div class="panel-title">PROXMOX VMs/CTs</div><div class="panel-body"><div class="scroll" style="max-height:200px">`;
+  if(qemu.length){
+    h+=`<div style="font-size:7px;color:var(--g3);letter-spacing:1px;margin-bottom:2px"><b>QEMU</b></div>`;
+    h+=`<table class="tbl"><thead><tr><th>VMID</th><th>NAME</th><th class="c">STATUS</th><th class="r">CPUs</th><th class="r">MEM</th></tr></thead><tbody>`;
+    for(const v of qemu){
+      const running=v.status==='running';
+      h+=`<tr><td>${v.vmid}</td><td>${dot(running,false)}<b>${v.name}</b></td><td class="c" style="color:${running?'var(--g)':'var(--g3)'}">${v.status}</td><td class="r">${v.cpus}</td><td class="r" style="font-size:7px">${fmtBytesHuman(v.mem_used||0)}/${fmtBytesHuman(v.mem_max||0)}</td></tr>`;
+    }
+    h+=`</tbody></table>`;
+  }
+  if(lxc.length){
+    h+=`<div style="font-size:7px;color:var(--g3);letter-spacing:1px;margin:4px 0 2px"><b>LXC</b></div>`;
+    h+=`<table class="tbl"><thead><tr><th>VMID</th><th>NAME</th><th class="c">STATUS</th><th class="r">MEM</th></tr></thead><tbody>`;
+    for(const c of lxc){
+      const running=c.status==='running';
+      h+=`<tr><td>${c.vmid}</td><td>${dot(running,false)}<b>${c.name}</b></td><td class="c" style="color:${running?'var(--g)':'var(--g3)'}">${c.status}</td><td class="r" style="font-size:7px">${fmtBytesHuman(c.mem_used||0)}/${fmtBytesHuman(c.mem_max||0)}</td></tr>`;
+    }
+    h+=`</tbody></table>`;
+  }
+  h+=`</div></div></div>`;
+  return h;
+}
+
+function renderLibvirt(d){
+  const lv=d.libvirt||{};
+  const domains=lv.domains||[];
+  if(!domains.length) return '';
+  let h=`<div class="panel"><div class="panel-title">KVM DOMAINS</div><div class="panel-body"><div class="scroll" style="max-height:150px">`;
+  h+=`<table class="tbl"><thead><tr><th>NAME</th><th class="c">STATE</th><th>TITLE</th></tr></thead><tbody>`;
+  for(const d of domains){
+    const running=d.state==='running';
+    h+=`<tr><td>${dot(running,false)}<b>${d.name}</b></td><td class="c" style="color:${running?'var(--g)':'var(--g3)'}">${d.state}</td><td style="font-size:7px;color:var(--g3)">${d.title||''}</td></tr>`;
+  }
+  h+=`</tbody></table></div></div></div>`;
+  return h;
+}
+
+function renderEventLog(d){
+  const logs=d.logging||[];
+  let filteredLogs=logs;
+  if(logFilter==='warn') filteredLogs=logs.filter(l=>l.priority<=4);
+  else if(logFilter==='kern') filteredLogs=logs.filter(l=>/kernel|systemd|init/i.test(l.source));
+
+  const logCls=logs.some(l=>l.priority<=3)?'panel alarm':logs.some(l=>l.priority<=4)?'panel warning':'panel';
+  let h=`<div class="${logCls}"><div class="panel-title">EVENT LOG</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:6px;margin-bottom:4px"><span class="tab ${logFilter==='all'?'active':''}" onclick="logFilter='all';render(currentData)">ALL</span><span class="tab ${logFilter==='warn'?'active':''}" onclick="logFilter='warn';render(currentData)">WARN+</span><span class="tab ${logFilter==='kern'?'active':''}" onclick="logFilter='kern';render(currentData)">KERNEL</span><span style="font-size:7px;color:var(--gdim);margin-left:auto">${filteredLogs.length} entries</span></div>`;
+  h+=`<div class="scroll" style="max-height:200px">`;
+  for(const l of filteredLogs){
+    const col=SEV_COLOR[l.priority]||'var(--g2)';
+    const sc=srcColor(l.source);
+    h+=`<div class="log-entry"><span class="log-ts">${l.timestamp||''}</span><span class="log-sev" style="color:${col}">${SEV_LABEL[l.priority]||l.priority}</span><span style="word-break:break-all"><span class="log-src" style="color:${sc}">${l.source}:</span> <span style="color:var(--g2)">${l.message}</span></span></div>`;
+  }
+  if(!filteredLogs.length) h+='<div style="color:var(--g3);text-align:center;padding:8px">NO LOG ENTRIES</div>';
+  h+=`</div></div></div>`;
+  return h;
+}
+
+function renderInterfaceSummary(d){
+  const intfs=d.interfaces||[],lldp=d.lldp||[];
+  const up=intfs.filter(i=>i.operstate==='UP'||i.operstate==='UNKNOWN');
+  const down=intfs.filter(i=>i.operstate==='DOWN');
+  let h=`<div class="panel"><div class="panel-title">INTERFACE SUMMARY</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center">`;
+  h+=`<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g)">${up.length}</div><div class="lbl">UP</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="font-size:14px;color:${down.length?'var(--red)':'var(--g3)'}">${down.length}</div><div class="lbl">DOWN</div></div>`;
+  h+=`<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g2)">${lldp.length}</div><div class="lbl">LLDP</div></div>`;
+  h+=`</div></div></div>`;
+  return h;
+}
+
+function renderFooter(d){
+  const meta=d.meta||{},cpu=d.cpu||{},mem=d.memory||{};
+  const intfs=d.interfaces||[],routes=d.routes||{},conns=d.connections||{};
+  const svcs=d.services||d.services_rc||{};
+  const upIntfs=intfs.filter(i=>i.operstate==='UP'||i.operstate==='UNKNOWN');
+  const timing=meta.collector_timing||{};
+  const topTimers=Object.entries(timing).sort((a,b)=>b[1]-a[1]).slice(0,4).map(([k,v])=>`${k}:${v}s`).join(' ');
+
+  let h=`<div class="footer">`;
+  h+=`<span>POLL:${meta.poll_count||0} | ${meta.poll_time||'---'}s | ${meta.collectors_run||'--'}/${(meta.collectors_run||0)+(meta.collectors_skipped||0)} collectors${topTimers?' | '+topTimers:''}</span>`;
+  h+=`<span style="animation:pulse 2s infinite">${dotCls('up',false)} TELEMETRY ${meta.error?'<span style="color:var(--amber)">DEGRADED</span>':'ACTIVE'}</span>`;
+  h+=`<span>${upIntfs.length} IF | ${routes.total||0} RTE | ${conns.tcp_established||0} CONN | ${svcs.active_count||0} SVC</span>`;
+  h+=`</div>`;
+  return h;
+}
+
+/* ==============================================================
+   MAIN RENDER — caps-driven column layout
+   ============================================================== */
+function render(d){
+  let h = renderHeader(d);
+  h += '<div class="grid">';
+
+  // ══ LEFT COLUMN: Hardware ══
+  h += '<div class="col">';
+  h += renderCompute(d);
+  if(cap(d,'has_thermal'))   h += renderThermal(d);
+  if(cap(d,'has_nvidia'))    h += renderGpuNvidia(d);
+  if(cap(d,'has_amdgpu'))    h += renderGpuAmd(d);
+  h += renderStorage(d);
+  if(cap(d,'has_zfs'))       h += renderZfs(d);
+  if(cap(d,'has_lvm'))       h += renderLvm(d);
+  if(cap(d,'has_smartctl'))  h += renderSmart(d);
+  h += '</div>';
+
+  // ══ CENTER COLUMN: Network ══
+  h += '<div class="col">';
+  if(cap(d,'has_lldpd'))     h += renderLldp(d);
+  h += renderInterfaces(d);
+  h += renderRouting(d);
+  if(cap(d,'has_frr'))       h += renderFrr(d);
+  if(cap(d,'has_bird'))      h += renderBird(d);
+  h += renderConnections(d);
+  h += '</div>';
+
+  // ══ RIGHT COLUMN: Operational ══
+  h += '<div class="col">';
+  if(cap(d,'has_systemd'))   h += renderServices(d);
+  if(cap(d,'has_openrc'))    h += renderServicesRc(d);
+  if(cap(d,'has_docker'))    h += renderDocker(d);
+  if(cap(d,'has_podman'))    h += renderPodman(d);
+  if(cap(d,'has_nomad'))     h += renderNomad(d);
+  if(cap(d,'has_proxmox'))   h += renderProxmox(d);
+  if(cap(d,'has_libvirt'))   h += renderLibvirt(d);
+  h += renderEventLog(d);
+  h += renderInterfaceSummary(d);
+  h += '</div>';
+
+  h += '</div>'; // end grid
+  h += renderFooter(d);
+
+  document.getElementById('app').innerHTML = h;
+}
+
+/* ==============================================================
+   TERMINAL MANAGER
+   ============================================================== */
+const TerminalMgr={
+  _term:null,_fitAddon:null,_ws:null,_open:false,_dataHooked:false,
+  toggle(){this._open?this.close():this.open()},
+  open(){
+    const ol=document.getElementById('term-overlay');
+    ol.style.display='flex';
+    this._open=true;
+    if(!this._term){
+      this._term=new window.Terminal({fontSize:13,fontFamily:'var(--mono)',theme:{background:'#0a0a0a',foreground:'#00ff41',cursor:'#00ff41'}});
+      this._fitAddon=new window.FitAddon.FitAddon();
+      this._term.loadAddon(this._fitAddon);
+      this._term.open(document.getElementById('term-body'));
+      this._fitAddon.fit();
+      this._ro=new ResizeObserver(()=>{if(this._fitAddon&&this._open){this._fitAddon.fit();if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}))}});
+      this._ro.observe(document.getElementById('term-body'));
+    }
+    if(!this._ws||this._ws.readyState!==WebSocket.OPEN)this._connect();
+  },
+  _connect(){
+    document.getElementById('term-status').textContent='CONNECTING...';
+    this._ws=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws/terminal`);
+    this._ws.binaryType='arraybuffer';
+    this._ws.onopen=()=>{
+      document.getElementById('term-status').textContent='CONNECTED';
+      this._fitAddon.fit();
+      this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}));
+    };
+    this._ws.onmessage=(e)=>{e.data instanceof ArrayBuffer?this._term.write(new Uint8Array(e.data)):this._term.write(e.data)};
+    this._ws.onclose=()=>{document.getElementById('term-status').textContent='DISCONNECTED'};
+    if(!this._dataHooked){
+      this._term.onData((data)=>{if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(data)});
+      this._dataHooked=true;
+    }
+  },
+  close(){document.getElementById('term-overlay').style.display='none';this._open=false},
+  reconnect(){if(this._ws)this._ws.close();this._connect()}
+};
+
+/* ==============================================================
+   LOGIN MODAL
+   ============================================================== */
+let _connectHost = null;
+
+const LoginModal = {
+  overlay: null,
+
+  async init() {
+    this.overlay = document.getElementById('loginOverlay');
+    const params = new URLSearchParams(window.location.search);
+
+    let defaults = {};
+    try {
+      const r = await fetch('/api/defaults');
+      if (r.ok) defaults = await r.json();
+    } catch(e) {}
+
+    const val = (key, fb='') => params.get(key) || defaults[key] || fb;
+    document.getElementById('lf-host').value    = val('host');
+    document.getElementById('lf-user').value    = val('username');
+    document.getElementById('lf-pass').value    = params.get('password') || '';
+    document.getElementById('lf-dtype').value   = val('device_type', 'linux');
+    const _DTYPE_LABELS = {arista_eos:'ARISTA EOS',juniper_junos:'JUNIPER JUNOS',cisco_ios:'CISCO IOS',cisco_xe:'CISCO IOS-XE',cisco_nxos:'CISCO NX-OS',linux:'LINUX'};
+    {
+      const _dt = document.getElementById('lf-dtype').value;
+      const _hl = document.getElementById('lf-hud-label');
+      if (_hl) _hl.textContent = (_DTYPE_LABELS[_dt] || (_dt||'').toUpperCase()) + ' HUD';
+    }
+    // AUTH METHOD: device_type is locked to this server's vendor above
+    // (override only via ?device_type= in the URL). The modal picks password
+    // or SSH key and shows just that field.
+    const _useKeys = params.get('auth')
+      ? (params.get('auth') === 'key')
+      : ((params.get('use_keys') || String(defaults.use_keys)) === 'true');
+    document.getElementById('lf-auth').value = _useKeys ? 'key' : 'password';
+    const _applyAuthMode = () => {
+      const mode = document.getElementById('lf-auth').value;
+      const pL = document.getElementById('lf-pass').closest('label');
+      const kL = document.getElementById('lf-keyfile').closest('label');
+      if (pL) {
+        pL.style.display = mode === 'password' ? '' : 'none';
+        if (pL.parentElement) pL.parentElement.style.gridTemplateColumns = mode === 'password' ? '1fr 1fr' : '1fr';
+      }
+      if (kL) {
+        kL.style.display = mode === 'key' ? '' : 'none';
+        if (kL.parentElement) kL.parentElement.style.gridTemplateColumns = mode === 'key' ? '1fr 1fr' : '1fr';
+      }
+    };
+    _applyAuthMode();
+    document.getElementById('lf-auth').addEventListener('change', _applyAuthMode);
+    document.getElementById('lf-legacy').checked = (params.get('legacy_ssh') || String(defaults.legacy_ssh)) === 'true';
+
+    document.getElementById('loginClose').onclick = () => this.dismiss();
+    document.getElementById('loginFields').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.connect();
+    });
+
+    if (params.get('host') && params.get('autoconnect') === 'true') {
+      this.connect();
+      return;
+    }
+
+    if (!params.get('host') && !params.get('username')) {
+      this.dismiss();
+      return;
+    }
+
+    this.overlay.style.display = 'flex';
+  },
+
+  async connect() {
+    const btn = document.getElementById('loginBtn');
+    const status = document.getElementById('loginStatus');
+    btn.disabled = true;
+    btn.textContent = '⟳ CONNECTING...';
+    status.style.color = '#00ff41';
+    status.textContent = 'Establishing SSH session...';
+
+    const body = {
+      host:        document.getElementById('lf-host').value.trim(),
+      username:    document.getElementById('lf-user').value.trim(),
+      device_type: document.getElementById('lf-dtype').value,
+      legacy_ssh:  document.getElementById('lf-legacy').checked,
+    };
+    const _authMode = document.getElementById('lf-auth').value;
+    if (_authMode === 'password') {
+      const pass = document.getElementById('lf-pass').value;
+      if (pass) body.password = pass;
+    } else {
+      const keyInput = document.getElementById('lf-keyfile');
+      if (keyInput.files && keyInput.files.length > 0) {
+        body.key_text = await keyInput.files[0].text();
+      }
+    }
+
+    if (!body.host) {
+      status.style.color = '#ffaa00';
+      status.textContent = 'Host is required';
+      btn.disabled = false;
+      btn.textContent = '▶ CONNECT';
+      return;
+    }
+
+    try {
+      const r = await fetch('/api/connect', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+
+      if (data.status === 'ok') {
+        status.textContent = `Connected to ${data.host}`;
+        _connectHost = data.host;
+        const shortHost = data.host.split('.')[0].toUpperCase();
+<!--        document.title = `${shortHost} — HUD`;-->
+        // Show loading overlay while first poll runs
+        let lo = document.getElementById('load-overlay');
+        if (lo) {
+          lo.style.display = 'flex';
+          const cmd = document.getElementById('load-cmd');
+          if (cmd) cmd.textContent = 'WAITING FOR FIRST POLL...';
+        }
+        setTimeout(() => this.dismiss(), 400);
+      } else {
+        status.style.color = '#ff3333';
+        status.textContent = data.message || 'Connection failed';
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+      }
+    } catch(e) {
+      status.style.color = '#ff3333';
+      status.textContent = `Error: ${e.message}`;
+      btn.disabled = false;
+      btn.textContent = '▶ CONNECT';
+    }
+  },
+
+  dismiss() {
+    if (this.overlay) this.overlay.style.display = 'none';
+    if (window.location.search) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+    connect();
+  },
+};
+
+LoginModal.init();
+  const params = new URLSearchParams(location.search);
+const devName = params.get('name');
+if(devName) document.title = `${devName} — HUD`;
+</script>
+</body>
+</html>

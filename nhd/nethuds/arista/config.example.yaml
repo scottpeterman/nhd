@@ -1,0 +1,25 @@
+# Arista HUD Configuration
+# Copy to config.yaml and edit for your environment
+
+device:
+  host: "10.1.1.1"
+  username: "speterman"
+  password: ""
+  device_type: "arista_eos"
+  use_keys: yes
+  key_file: "~/.ssh/id_rsa"
+  # password: ""          # uncomment if not using keys
+  timeout: 30
+  session_timeout: 60
+  legacy_ssh: true         # required for EOS < 4.25 / OpenSSH < 7.2
+                           # disables rsa-sha2-256/512 pubkey algorithms
+
+# Polling interval in seconds
+poll_interval: 15
+
+# Server settings
+server:
+  host: "0.0.0.0"
+  port: 8470
+#  ssl_certfile: /app/certs/cert.pem
+#  ssl_keyfile: /app/certs/key.pem

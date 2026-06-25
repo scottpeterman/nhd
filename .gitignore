@@ -1,0 +1,109 @@
+# ───────────────────────────── Python ─────────────────────────────
+# Byte-compiled / optimized / cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Distribution / packaging / build
+.Python
+build/
+dist/
+sdist/
+wheels/
+*.egg
+*.egg-info/
+.eggs/
+*.manifest
+*.spec
+pip-wheel-metadata/
+share/python-wheels/
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version          # pyenv
+
+# Test / coverage / type-check / lint caches
+.pytest_cache/
+.tox/
+.nox/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+*.cover
+.cache/
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+
+# Jupyter / IPython
+.ipynb_checkpoints/
+profile_default/
+ipython_config.py
+
+# ──────────────────────── JetBrains / PyCharm ─────────────────────
+# Ignore the whole project dir. If you ever want to share run configs,
+# un-ignore specific files, e.g.:  !.idea/runConfigurations/
+.idea/
+*.iml
+*.iws
+*.ipr
+cmake-build-*/
+out/
+
+# ───────────────────────────── VS Code ────────────────────────────
+# Ignore the workspace dir. To share editor config, un-ignore the few
+# files worth committing (uncomment as needed):
+.vscode/
+# !.vscode/settings.json
+# !.vscode/launch.json
+# !.vscode/extensions.json
+# !.vscode/tasks.json
+*.code-workspace
+.history/
+
+# ───────────────────────────── macOS ──────────────────────────────
+.DS_Store
+.DS_Store?
+.AppleDouble
+.LSOverride
+._*                      # AppleDouble resource forks
+.Spotlight-V100
+.Trashes
+.fseventsd
+.VolumeIcon.icns
+.DocumentRevisions-V100
+.TemporaryItems
+.apdisk
+Icon?                    # custom folder icons
+
+# ──────────────────────── nethuds desktop (nhd) ───────────────────
+# Local secrets / config that must never be committed
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+id_rsa
+id_ed25519
+
+# Credential vault, if one is ever created inside the repo tree
+# (the real vault lives at ~/.nhd/vault.db — outside the repo — but guard
+#  against a stray local copy)
+*.vault
+vault.db
+.nhd/
+sessions/
+
+# Logs / scratch
+*.log
+*.tmp
+*.bak

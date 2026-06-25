@@ -1,0 +1,865 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="green">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Cisco IOS HUD</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<style>
+  /* GREEN theme (default) */
+  [data-theme="green"] {
+    --g: #00ff41; --g2: #00cc33; --g3: #009922; --gdim: #004d15; --gdimmer: #002a0a;
+    --red: #ff3333; --amber: #ffaa00; --cyan: #00ddff;
+    --bg: #080a08; --bg2: #0e120eee;
+    --scan: rgba(0,255,65,0.012);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+  }
+  /* AMBER theme (night mode) */
+  [data-theme="amber"] {
+    --g: #ff9500; --g2: #e07800; --g3: #a85800; --gdim: #5a3200; --gdimmer: #2e1a00;
+    --red: #ff4444; --amber: #ffcc00; --cyan: #ffcc66;
+    --bg: #0a0800; --bg2: #12100aee;
+    --scan: rgba(255,149,0,0.010);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--g); font-family: var(--mono); font-size: 10px; overflow-x: hidden; }
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan) 2px, var(--scan) 4px);
+  }
+  @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+  @keyframes radarSweep { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+  .shell { padding: 6px; min-height: 100vh; }
+  .header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,153,34,.27); padding-bottom:5px; margin-bottom:6px; flex-wrap:wrap; gap:4px; }
+  .hostname { font-size:15px; letter-spacing:3px; font-weight:bold; color:var(--g); }
+  .hdim { color:var(--gdim); font-size:8px; margin-left:8px; }
+  .hsub { color:var(--g3); font-size:8px; margin-left:8px; }
+  .grid { display:grid; grid-template-columns:1fr 260px 1fr; gap:6px; }
+  @media (max-width: 1200px) { .grid { grid-template-columns:1fr 240px 1fr; } }
+  @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
+  .col { display:flex; flex-direction:column; gap:6px; }
+  .panel { border:1px solid var(--g3); background:var(--bg2); position:relative; }
+  .panel.alert { border-color:var(--red); }
+  .panel.warning { border-color:var(--amber); }
+  .panel-title { font-size:9px; letter-spacing:2px; text-transform:uppercase; padding:4px 8px 3px; border-bottom:1px solid rgba(0,153,34,.27); color:var(--g); background:rgba(0,153,34,.03); }
+  .panel.alert .panel-title { color:var(--red); background:rgba(255,51,51,.04); border-bottom-color:rgba(255,51,51,.15); }
+  .panel.warning .panel-title { color:var(--amber); background:rgba(255,170,0,.04); border-bottom-color:rgba(255,170,0,.15); }
+  .panel-body { padding:4px 8px 6px; }
+  .panel::before, .panel::after { content:''; position:absolute; width:10px; height:10px; pointer-events:none; }
+  .panel::before { top:-1px; left:-1px; border-top:1.5px solid var(--g3); border-left:1.5px solid var(--g3); }
+  .panel::after { top:-1px; right:-1px; border-top:1.5px solid var(--g3); border-right:1.5px solid var(--g3); }
+  .panel.alert::before, .panel.alert::after { border-color:var(--red); }
+  .panel.warning::before, .panel.warning::after { border-color:var(--amber); }
+  .lbl { color:var(--g3); font-size:8px; letter-spacing:1px; }
+  .val { font-weight:bold; }
+  .dot { display:inline-block; width:5px; height:5px; border-radius:50%; margin-right:3px; vertical-align:middle; }
+  .dot-ok { background:var(--g); box-shadow:0 0 4px var(--g); }
+  .dot-err { background:var(--red); box-shadow:0 0 4px var(--red); }
+  .dot-warn { background:var(--amber); box-shadow:0 0 4px var(--amber); }
+  .dot-dim { background:var(--gdim); }
+  .dot-blink { animation: blink .8s infinite; }
+  .tbl { width:100%; border-collapse:collapse; font-size:8px; }
+  .tbl th { text-align:left; padding:2px 3px; color:var(--g3); border-bottom:1px solid var(--gdimmer); font-weight:normal; }
+  .tbl td { padding:2px 3px; }
+  .tbl .r { text-align:right; }
+  .tbl .c { text-align:center; }
+  .log-entry { display:flex; gap:4px; padding:2px 0; border-bottom:1px solid rgba(0,42,10,.2); font-size:8px; line-height:1.4; }
+  .log-ts { color:rgba(0,180,50,.75); min-width:84px; white-space:nowrap; }
+  .log-sev { min-width:32px; font-weight:bold; }
+  .log-fac { font-weight:bold; margin-right:2px; }
+  .tab { cursor:pointer; font-size:8px; letter-spacing:1px; padding-bottom:1px; border-bottom:1px solid transparent; margin-right:6px; text-transform:uppercase; color:var(--g3); }
+  .tab.active { color:var(--g); border-bottom-color:var(--g); }
+  .scroll { overflow-y:auto; }
+  .scroll::-webkit-scrollbar { width:4px; }
+  .scroll::-webkit-scrollbar-track { background:var(--bg); }
+  .scroll::-webkit-scrollbar-thumb { background:var(--g3); }
+  .footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(0,153,34,.2); margin-top:6px; padding-top:4px; font-size:7px; color:var(--g3); flex-wrap:wrap; gap:4px; }
+  .conn-banner { text-align:center; padding:12px; font-size:11px; letter-spacing:2px; border:1px solid var(--amber); color:var(--amber); margin:20px; animation:pulse 2s infinite; }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:1px 0; }
+  .row-b { border-bottom:1px solid rgba(0,42,10,.13); }
+  .port-cell { display:inline-flex; align-items:center; justify-content:center; width:26px; height:14px; margin:1px; font-size:5.5px; border-radius:1px; cursor:default; border:1px solid var(--gdimmer); }
+  .port-cell.up { border-color:var(--g2); background:rgba(0,255,65,.12); color:var(--g); }
+  .port-cell.down { border-color:var(--gdimmer); background:rgba(0,42,10,.15); color:var(--gdimmer); }
+  .port-cell.disabled { border-color:var(--gdimmer); background:rgba(255,51,51,.06); color:rgba(255,51,51,.3); }
+  .port-cell.err { border-color:var(--red); background:rgba(255,51,51,.15); color:var(--red); animation:blink 2s infinite; }
+  .port-cell:hover { outline:1px solid var(--g); z-index:1; }
+
+  /* Theme toggle */
+  .theme-toggle {
+    cursor:pointer; font-size:9px; letter-spacing:1px; padding:3px 10px;
+    border:1px solid var(--g2); background:transparent; color:var(--g2);
+    text-transform:uppercase; font-family:inherit;
+  }
+  .theme-toggle:hover { color:var(--g); border-color:var(--g); }
+
+  /* Terminal FAB + overlay */
+  .term-fab {
+    position:fixed; bottom:20px; right:20px; z-index:900;
+    width:48px; height:48px; border-radius:50%;
+    background:var(--bg2); border:1.5px solid var(--g3);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .term-fab:hover { border-color:var(--g); box-shadow:0 0 12px rgba(0,255,65,.3); }
+  .term-fab svg { width:20px; height:20px; fill:none; stroke:var(--g3); stroke-width:1.5; }
+  .term-fab:hover svg { stroke:var(--g); }
+  .term-fab.active { border-color:var(--g); }
+  .term-fab.active svg { stroke:var(--g); }
+  .term-overlay {
+    display:none; position:fixed; top:60px; left:10%; width:80%; height:calc(100vh - 140px);
+    z-index:950; background:var(--bg); border:1px solid var(--g3);
+    flex-direction:column; box-shadow:0 0 30px rgba(0,0,0,.8);
+    resize:both; overflow:hidden; min-width:400px; min-height:200px;
+  }
+  .term-overlay.open { display:flex; }
+  .term-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:4px 10px; border-bottom:1px solid var(--g3);
+    font-size:9px; letter-spacing:2px; color:var(--g);
+    background:rgba(0,153,34,.03); cursor:move; user-select:none;
+  }
+  .term-header span { display:flex; align-items:center; gap:6px; }
+  .term-btn {
+    cursor:pointer; font-size:8px; letter-spacing:1px; padding:2px 8px;
+    border:1px solid var(--g3); background:transparent; color:var(--g3);
+    text-transform:uppercase; font-family:inherit;
+  }
+  .term-btn:hover { color:var(--g); border-color:var(--g); }
+  .term-body { flex:1; overflow:hidden; padding:4px; }
+  .term-status {
+    padding:2px 10px; font-size:7px; color:var(--g3);
+    border-top:1px solid rgba(0,153,34,.15); text-transform:uppercase; letter-spacing:1px;
+  }
+  .xterm-viewport::-webkit-scrollbar { width:6px; }
+  .xterm-viewport::-webkit-scrollbar-track { background:var(--bg); }
+  .xterm-viewport::-webkit-scrollbar-thumb { background:var(--g3); border-radius:3px; }
+
+  /* Loading overlay */
+  .load-overlay {
+    position: fixed; inset: 0; z-index: 500; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    font-family: var(--mono); color: var(--g);
+  }
+  .load-overlay .load-title {
+    font-size: 14px; letter-spacing: 4px; margin-bottom: 20px;
+    animation: pulse 2s infinite;
+  }
+  .load-overlay .load-bar-wrap {
+    width: 320px; height: 6px; border: 1px solid var(--g3);
+    background: var(--bg2); margin-bottom: 12px;
+  }
+  .load-overlay .load-bar {
+    height: 100%; background: var(--g); width: 0%;
+    transition: width .3s ease; box-shadow: 0 0 6px var(--g);
+  }
+  .load-overlay .load-cmd {
+    font-size: 9px; color: var(--g3); letter-spacing: 1px; height: 14px;
+  }
+  .load-overlay .load-elapsed {
+    font-size: 8px; color: var(--g3); margin-top: 6px;
+  }
+  .load-overlay .load-steps {
+    margin-top: 14px; font-size: 8px; color: var(--gdim); max-width: 320px;
+  }
+</style>
+</head>
+<body>
+
+<div class="load-overlay" id="load-overlay">
+  <div class="load-title">INITIALIZING TELEMETRY</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+  <div class="load-cmd" id="load-cmd">CONNECTING...</div>
+  <div class="load-elapsed" id="load-elapsed"></div>
+  <div class="load-steps" id="load-steps"></div>
+</div>
+
+  <!-- ═══════ LOGIN MODAL ═══════ -->
+  <div id="loginOverlay" style="
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,0.92);
+    display:none; align-items:center; justify-content:center;
+    font-family:'Courier New','Lucida Console',monospace;
+  ">
+    <div id="loginBox" style="
+      border:1px solid #00ff41; background:#080a08;
+      padding:24px 28px; min-width:380px; max-width:460px;
+      box-shadow:0 0 20px rgba(0,255,65,0.15), inset 0 0 60px rgba(0,255,65,0.02);
+    ">
+      <div style="border-bottom:1px solid #004d15; padding-bottom:8px; margin-bottom:16px;
+        display:flex; justify-content:space-between; align-items:center;">
+        <span style="color:#00ff41; font-size:11px; text-transform:uppercase; letter-spacing:2px;">⬡ CONNECT TO DEVICE</span><span id="lf-hud-label" style="color:#00ff41; font-size:9px; letter-spacing:2px; margin-left:12px; opacity:0.7;"></span>
+        <span id="loginClose" style="color:#004d15; cursor:pointer; font-size:14px;" title="Use config.yaml defaults">✕</span>
+      </div>
+      <div id="loginFields" style="display:grid; gap:10px;">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">HOST</span>
+          <input id="lf-host" type="text" placeholder="switch.example.com" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">USERNAME</span>
+            <input id="lf-user" type="text" placeholder="admin" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">PASSWORD</span>
+            <input id="lf-pass" type="password" placeholder="password" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+        </div>
+        <input id="lf-dtype" type="hidden">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">AUTH METHOD</span>
+          <select id="lf-auth" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;"><option value="password">Password</option><option value="key">SSH Key</option></select>
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">SSH PRIVATE KEY</span>
+            <input id="lf-keyfile" type="file" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:10px; padding:4px 6px; outline:none;">
+            <span style="color:#004d15; font-size:7px;">RSA, Ed25519, or ECDSA. Read once, never stored.</span>
+          </label>
+          <label style="display:flex; align-items:end; gap:8px; padding-bottom:6px;">
+            <input id="lf-legacy" type="checkbox" style="accent-color:#00ff41;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">LEGACY SSH</span>
+          </label>
+        </div>
+      </div>
+      <div id="loginStatus" style="margin-top:12px; font-size:10px; min-height:14px; color:#004d15;"></div>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button id="loginBtn" onclick="LoginModal.connect()" style="
+          flex:1; background:transparent; border:1px solid #00ff41; color:#00ff41;
+          font-family:inherit; font-size:11px; padding:8px; cursor:pointer;
+          text-transform:uppercase; letter-spacing:2px;"
+        >▶ CONNECT</button>
+        <button onclick="LoginModal.dismiss()" style="
+          background:transparent; border:1px solid #004d15; color:#004d15;
+          font-family:inherit; font-size:10px; padding:8px 14px; cursor:pointer;
+          text-transform:uppercase;" title="Skip — use config.yaml defaults"
+        >SKIP</button>
+      </div>
+    </div>
+  </div>
+  <!-- ═══════ END LOGIN MODAL ═══════ -->
+
+<div class="shell" id="app"><div class="conn-banner" id="conn-status">CONNECTING TO TELEMETRY FEED...</div></div>
+
+<!-- Terminal FAB -->
+<div class="term-fab" id="term-fab" onclick="TerminalMgr.toggle()" title="SSH Terminal">
+  <svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg>
+</div>
+<!-- Terminal Overlay -->
+<div class="term-overlay" id="term-overlay">
+  <div class="term-header">
+    <span>❯ SSH TERMINAL</span>
+    <span>
+      <button class="term-btn" onclick="TerminalMgr.reconnect()">RECONNECT</button>
+      <button class="term-btn" onclick="TerminalMgr.close()">CLOSE</button>
+    </span>
+  </div>
+  <div class="term-body" id="term-body"></div>
+  <div class="term-status" id="term-status">DISCONNECTED</div>
+</div>
+
+<script>
+/* ==============================================================
+   MODULE: GLOBALS & SESSION
+   ============================================================== */
+const WS_BASE = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+const SEV_COLOR={0:'var(--red)',1:'var(--red)',2:'var(--red)',3:'var(--red)',4:'var(--amber)',5:'var(--g2)',6:'var(--gdim)',7:'var(--gdim)'};
+const SEV_LABEL={3:'ERR',4:'WARN',5:'NOTIF',6:'INFO',7:'DBG'};
+const IOS_FAC_COLOR={SYS:'#40e0d0',LINEPROTO:'#40e0d0',LINK:'#40e0d0',OSPF:'#40e0d0',BGP:'#40e0d0',DUAL:'#40e0d0',EIGRP:'#40e0d0',CDP:'#66bb6a',LLDP:'#66bb6a',SFF8472:'#c080ff',TRANSCEIVER:'#c080ff',PM:'#c080ff',ILPOWER:'#c080ff',EC:'#80b0ff',LACP:'#80b0ff',SPANTREE:'#80b0ff',SW_VLAN:'#80b0ff',STP:'#80b0ff',DOT1X:'#ff8080',AUTHMGR:'#ff8080',RADIUS:'#ff8080',SEC:'#ff8080',AAA:'#ff8080',SSH:'#ff8080',SEC_LOGIN:'#ff8080',CRYPTO:'#ff8080',PLATFORM:'#e08040',ENVIRONMENT:'#e08040',FAN:'#e08040',POWER:'#e08040',C4K:'#e08040',SNMP:'#66bb6a',CONFIG_I:'#e0e040',PARSER:'#e0e040',ARCHIVE:'#e0e040',CMD_AUDIT:'#e0e040'};
+function facColor(f){return IOS_FAC_COLOR[(f||'').toUpperCase()]||'#4dc880';}
+
+let _sessionId = sessionStorage.getItem('hud_session_id') || null;
+let _completedCmds = [];
+let _connectHost = null;
+
+function _setSession(sid) {
+  _sessionId = sid;
+  if (sid) sessionStorage.setItem('hud_session_id', sid);
+  else sessionStorage.removeItem('hud_session_id');
+}
+
+let ws=null,currentData=null,logFilter='all',intfView='status';
+
+/* ==============================================================
+   MODULE: THEME
+   ============================================================== */
+const Theme={
+  current(){return document.documentElement.getAttribute('data-theme')||'green'},
+  toggle(){const n=this.current()==='green'?'amber':'green';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('hud-theme',n);if(currentData)render(currentData)},
+  init(){const s=localStorage.getItem('hud-theme');if(s)document.documentElement.setAttribute('data-theme',s)},
+  label(){return this.current()==='green'?'AMBER':'GREEN'}
+};
+Theme.init();
+
+/* Terminal drag */
+(function(){const h=document.querySelector('.term-header'),o=document.getElementById('term-overlay');let d=false,ox,oy;h.addEventListener('mousedown',e=>{if(e.target.closest('.term-btn'))return;d=true;ox=e.clientX-o.offsetLeft;oy=e.clientY-o.offsetTop;e.preventDefault()});document.addEventListener('mousemove',e=>{if(!d)return;o.style.left=(e.clientX-ox)+'px';o.style.top=(e.clientY-oy)+'px';o.style.right='auto'});document.addEventListener('mouseup',()=>{d=false})})();
+
+function dot(cls,blink){return`<span class="dot dot-${cls}${blink?' dot-blink':''}"></span>`}
+
+function gaugeRing(pct,size,color,label){
+  const r=size/2-3,c=Math.PI*2*r,off=c-(pct/100)*c;
+  return`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--gdimmer)" stroke-width="3"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size/2} ${size/2})" stroke-linecap="round"/><text x="${size/2}" y="${size/2-1}" fill="${color}" font-size="8" font-family="var(--mono)" text-anchor="middle" font-weight="bold">${pct.toFixed(0)}%</text><text x="${size/2}" y="${size/2+7}" fill="var(--g3)" font-size="5" font-family="var(--mono)" text-anchor="middle">${label}</text></svg>`
+}
+
+function renderRadar(nei,size){
+  if(!nei||!nei.length)return'<div style="text-align:center;color:var(--g3);padding:20px">NO LLDP DATA</div>';
+  const cx=size/2,cy=size/2,r=size/2-28;
+  let s=`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
+  s+=`<defs><radialGradient id="rg"><stop offset="0%" stop-color="var(--g)" stop-opacity="0.05"/><stop offset="100%" stop-color="var(--g)" stop-opacity="0"/></radialGradient></defs>`;
+  s+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#rg)"/>`;
+  for(const sc of[.4,.7,1])s+=`<circle cx="${cx}" cy="${cy}" r="${r*sc}" fill="none" stroke="var(--gdimmer)" stroke-width="0.5" stroke-dasharray="2,3"/>`;
+  s+=`<line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="var(--gdimmer)" stroke-width="0.3"/>`;
+  s+=`<line x1="${cx}" y1="${cy-r}" x2="${cx}" y2="${cy+r}" stroke="var(--gdimmer)" stroke-width="0.3"/>`;
+  s+=`<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="rgba(0,255,65,0.13)" stroke-width="12" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+  s+=`<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="rgba(0,255,65,0.27)" stroke-width="1" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+
+  // Self in center
+  s+=`<rect x="${cx-24}" y="${cy-9}" width="48" height="18" fill="var(--bg)" stroke="var(--g)" stroke-width="1.5" rx="2"/>`;
+  s+=`<text x="${cx}" y="${cy+3}" fill="var(--g)" font-size="5.5" font-family="var(--mono)" text-anchor="middle" font-weight="bold">C4948E</text>`;
+
+  nei.forEach((n,i)=>{
+    const a=(i/nei.length)*Math.PI*2-Math.PI/2;
+    const dist=r*0.65;
+    const px=cx+Math.cos(a)*dist,py=cy+Math.sin(a)*dist;
+    const isRouter=n.capability&&n.capability.includes('R');
+    const col=isRouter?'var(--cyan)':'var(--g2)';
+    const nm=n.device.split('.')[0].substring(0,12);
+    s+=`<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="${isRouter?'rgba(0,221,255,.2)':'rgba(0,255,65,.13)'}" stroke-width="${isRouter?'1.5':'.8'}"/>`;
+    if(isRouter){
+      s+=`<rect x="${px-20}" y="${py-5}" width="40" height="10" fill="var(--bg)" stroke="${col}" stroke-width="1" rx="1"/>`;
+      s+=`<text x="${px}" y="${py+2.5}" fill="${col}" font-size="5" font-family="var(--mono)" text-anchor="middle" font-weight="bold">${nm}</text>`;
+    } else {
+      s+=`<circle cx="${px}" cy="${py}" r="3.5" fill="var(--bg)" stroke="${col}" stroke-width="1"/>`;
+      s+=`<text x="${px}" y="${py-6}" fill="var(--g3)" font-size="5" font-family="var(--mono)" text-anchor="middle">${nm}</text>`;
+    }
+    const mx=(cx+px)/2,my=(cy+py)/2;
+    s+=`<text x="${mx}" y="${my-3}" fill="var(--gdim)" font-size="4" font-family="var(--mono)" text-anchor="middle">${n.local_intf}</text>`;
+  });
+  s+=`</svg>`;
+  return s;
+}
+
+/* ==============================================================
+   MODULE: RENDER
+   ============================================================== */
+function render(d){
+  if(!d) return;
+  const meta=d.meta||{};
+  const ver=d.version||{};
+  const env=d.environment||{};
+  const temps=d.temperature||[];
+  const cpu=d.cpu||{};
+  const intfs=d.interfaces||[];
+  const idesc=d.interfaces_desc||[];
+  // Enrichment: speed/type/vlan come from 'show interfaces status' when the
+  // platform supports it (switches). Keyed by port so we can merge onto the
+  // description-sourced rows, which work on routers AND switches.
+  const statByPort={}; for(const i of intfs){statByPort[i.port]=i;}
+  const lldp=d.lldp||[];
+  const routes=d.routes||{};
+  const logs=d.logging||[];
+  const inv=d.inventory||[];
+  const stp=d.stp||{};
+  const mac=d.mac_count||{};
+
+  const hostname=ver.hostname||meta.hostname||_connectHost||'---';
+  const cpuPct=cpu.five_sec||0;
+  const memPct=ver.mem_total>0?((ver.mem_used||0)/ver.mem_total*100):0;
+
+  const connected=intfs.filter(i=>i.status==='connected');
+  const notconnect=intfs.filter(i=>i.status==='notconnect');
+  const disabled=intfs.filter(i=>i.status==='disabled');
+  const errDisabled=intfs.filter(i=>i.status==='err-disabled');
+
+  const fanIssue=env.fan_status&&/fail|partial/i.test(env.fan_status);
+  const psuIssue=env.power_supplies&&env.power_supplies.some(p=>p.status!=='good');
+  const hasAlert=fanIssue||psuIssue||errDisabled.length>0;
+
+  const stale=meta.stale,pollErr=meta.error;
+  const overallStatus=pollErr?'ERROR':hasAlert?'WARNING':'NOMINAL';
+  const statusColor=pollErr?'var(--red)':hasAlert?'var(--amber)':'var(--g)';
+
+  let filteredLogs=logs;
+  if(logFilter==='warn') filteredLogs=logs.filter(l=>l.severity<=4);
+  else if(logFilter==='optic') filteredLogs=logs.filter(l=>/SFF|optic|threshold/i.test(l.facility+l.mnemonic+l.message));
+
+  // VLAN distribution
+  const vlanMap={};
+  for(const i of intfs){if(i.vlan&&i.vlan!=='trunk'&&i.vlan!=='routed'){const v=i.vlan;if(!vlanMap[v])vlanMap[v]={total:0,up:0};vlanMap[v].total++;if(i.status==='connected')vlanMap[v].up++}}
+  const vlans=Object.entries(vlanMap).sort((a,b)=>b[1].total-a[1].total);
+
+  // Optics from inventory
+  const optics=inv.filter(i=>/sfp|xfp|qsfp|transceiver/i.test(i.description)||/Te|Fo|Tw|Hu/.test(i.name));
+
+  const topProcs=(cpu.top_processes||[]).slice(0,5);
+
+  let h='';
+
+  // HEADER
+  h+=`<div class="header"><div><span class="hostname">${hostname.toUpperCase()}</span><span class="hsub">${ver.model||env.chassis_type||'---'}</span><span class="hdim">S/N:${ver.serial||'---'}</span><span class="hdim">IOS ${ver.ios_version||'---'}</span></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div><span class="lbl">UPTIME </span><span class="val" style="font-size:9px">${ver.uptime||'---'}</span></div><div>${pollErr?dot('err',true):hasAlert?dot('warn',true):dot('ok',false)}<span class="val" style="font-size:9px;color:${statusColor}">${overallStatus}</span>${stale?'<span style="color:var(--amber);font-size:7px;margin-left:4px">[STALE]</span>':''}</div><button class="theme-toggle" onclick="Theme.toggle()">◑ ${Theme.label()}</button></div></div>`;
+
+  h+='<div class="grid">';
+
+  // ===== LEFT COLUMN =====
+  h+='<div class="col">';
+
+  // Compute
+  h+=`<div class="panel"><div class="panel-title">COMPUTE</div><div class="panel-body"><div style="display:flex;align-items:flex-start;gap:8px"><div style="display:flex;gap:6px;flex-shrink:0">${gaugeRing(cpuPct,50,cpuPct>80?'var(--red)':cpuPct>60?'var(--amber)':'var(--g)','CPU')}${gaugeRing(memPct,50,memPct>85?'var(--red)':memPct>70?'var(--amber)':'var(--g)','MEM')}</div>`;
+  h+=`<div style="flex:1;font-size:7px;color:var(--g3)"><div>5s: ${cpu.five_sec||0}%/${cpu.five_sec_interrupt||0}% | 1m: ${cpu.one_min||0}% | 5m: ${cpu.five_min||0}%</div><div>RAM: ${ver.mem_total?(ver.mem_total/1024).toFixed(0)+'K':'---'}</div>`;
+  if(topProcs.length){
+    h+=`<div style="margin-top:3px;border-top:1px solid var(--gdimmer);padding-top:2px"><span class="lbl">TOP PROCESSES</span></div>`;
+    for(const p of topProcs){
+      h+=`<div style="display:flex;justify-content:space-between"><span style="color:${p.five_sec>5?'var(--amber)':'var(--g3)'}">${p.name}</span><span style="color:${p.five_sec>5?'var(--amber)':'var(--g2)'}">${p.five_sec}%</span></div>`;
+    }
+  }
+  h+=`</div></div></div></div>`;
+
+  // Power & Environment
+  const envCls=hasAlert?'panel warning':'panel';
+  h+=`<div class="${envCls}"><div class="panel-title">${hasAlert?'<span style="animation:blink 1.5s infinite;margin-right:6px">&#x26A0;</span>':''}POWER &amp; ENVIRONMENT</div><div class="panel-body">`;
+  h+=`<div class="row row-b"><span class="lbl">CHASSIS</span><span style="font-size:9px">${env.chassis_type||ver.model||'---'}</span></div>`;
+  for(const p of (env.power_supplies||[])){
+    const ok=p.status==='good';
+    h+=`<div class="row row-b"><span>${dot(ok?'ok':'err',!ok)}${p.id}</span><span style="color:var(--g3);font-size:7px">${p.model}</span><span style="font-size:9px"><b>${p.watts}W</b> ${p.type}</span><span style="color:${ok?'var(--g2)':'var(--red)'}">${p.status.toUpperCase()}</span></div>`;
+  }
+  h+=`<div class="row row-b"><span class="lbl">FANTRAY</span><span style="color:${fanIssue?'var(--amber)':'var(--g2)'};font-weight:${fanIssue?'bold':'normal'}">${env.fan_status||'---'}</span></div>`;
+  h+=`<div class="row"><span class="lbl">BW UTIL</span><span>${env.bandwidth_util||'---'}</span></div>`;
+  // Temperature sensors
+  if(temps.length){
+    h+='<div style="margin-top:4px;border-top:1px solid var(--gdimmer);padding-top:3px">';
+    for(const t of temps){
+      const col=t.temp>=55?'var(--red)':t.temp>=45?'var(--amber)':'var(--g2)';
+      h+=`<div class="row"><span class="lbl">${t.name}</span><span style="color:${col};font-weight:${t.temp>=45?'bold':'normal'}">${t.temp}C</span><span style="font-size:7px;color:var(--g3)">[${t.status}]${t.threshold?' / '+t.threshold+'C':''}</span></div>`;
+    }
+    h+='</div>';
+  }
+  h+='</div></div>';
+
+  // Port Map - visual grid of all ports
+  h+=`<div class="panel"><div class="panel-title">PORT MAP (${intfs.length} PORTS)</div><div class="panel-body"><div style="display:flex;flex-wrap:wrap;gap:1px">`;
+  for(const i of intfs){
+    let cls='down';
+    if(i.status==='connected') cls='up';
+    else if(i.status==='disabled') cls='disabled';
+    else if(i.status==='err-disabled') cls='err';
+    const short=i.port.replace('GigabitEthernet','Gi').replace('TenGigabitEthernet','Te').replace('FortyGigabitEthernet','Fo');
+    h+=`<div class="port-cell ${cls}" title="${short}: ${i.status} | VLAN ${i.vlan} | ${i.speed} | ${i.name||'no desc'}">${short.replace(/.*(\d+\/\d+)$/,'$1')}</div>`;
+  }
+  h+=`</div><div style="display:flex;gap:8px;margin-top:4px;font-size:7px">${dot('ok',false)}<span style="color:var(--g3)">Connected ${connected.length}</span>${dot('dim',false)}<span style="color:var(--g3)">NotConnect ${notconnect.length}</span><span style="color:rgba(255,51,51,.4)">&#9632;</span><span style="color:var(--g3)">Disabled ${disabled.length}</span>${errDisabled.length?dot('err',true)+'<span style="color:var(--red)">Err-Disabled '+errDisabled.length+'</span>':''}</div></div></div>`;
+
+  // VLAN Distribution
+  if(vlans.length){
+    h+=`<div class="panel"><div class="panel-title">VLAN DISTRIBUTION</div><div class="panel-body">`;
+    for(const[vlan,counts]of vlans){
+      const pct=intfs.length>0?(counts.total/intfs.length*100):0;
+      h+=`<div class="row row-b"><span class="val" style="font-size:9px;min-width:50px">VLAN ${vlan}</span><span style="font-size:7px;color:var(--g3)">${counts.up} up / ${counts.total} total</span><div style="width:60px;height:5px;background:var(--gdimmer);display:inline-block;margin-left:4px;vertical-align:middle"><div style="width:${pct}%;height:100%;background:var(--g2)"></div></div></div>`;
+    }
+    h+='</div></div>';
+  }
+
+  h+='</div>'; // left col
+
+  // ===== CENTER COLUMN =====
+  h+='<div class="col" style="align-items:center">';
+
+  // LLDP Topology
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">LLDP TOPOLOGY</div><div class="panel-body"><div style="text-align:center">${renderRadar(lldp,240)}</div><div style="text-align:center;font-size:7px;color:var(--g3);margin-top:2px">${lldp.length} NEIGHBORS</div></div></div>`;
+
+  // STP Summary
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">SPANNING TREE</div><div class="panel-body">`;
+  h+=`<div class="row row-b"><span class="lbl">MODE</span><span class="val">${stp.mode||'---'}</span></div>`;
+  h+=`<div class="row row-b"><span class="lbl">INSTANCES</span><span class="val">${stp.instances||'---'}</span></div>`;
+  h+=`<div class="row row-b"><span class="lbl">ROOT BRIDGES</span><span class="val" style="color:var(--cyan)">${stp.root_bridges||0}</span></div>`;
+  h+=`<div class="row row-b"><span class="lbl">FORWARDING</span><span class="val" style="color:var(--g2)">${stp.forwarding_ports||'---'}</span></div>`;
+  h+=`<div class="row"><span class="lbl">BLOCKING</span><span class="val" style="color:${stp.blocking_ports>0?'var(--amber)':'var(--g3)'}">${stp.blocking_ports||0}</span></div>`;
+  h+='</div></div>';
+
+  // MAC Address Table
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">MAC ADDRESS TABLE</div><div class="panel-body">`;
+  h+=`<div style="display:flex;gap:12px;justify-content:center"><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g)">${(mac.dynamic||0).toLocaleString()}</div><div class="lbl">DYNAMIC</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g3)">${mac.static||0}</div><div class="lbl">STATIC</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g2)">${(mac.total||0).toLocaleString()}</div><div class="lbl">TOTAL</div></div></div>`;
+  h+='</div></div>';
+
+  // Route Summary
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">ROUTING TABLE</div><div class="panel-body">`;
+  for(const r of (routes.routes||[])){
+    h+=`<div class="row row-b"><span class="lbl" style="min-width:60px">${r.source.toUpperCase()}</span><span class="val">${r.networks+r.subnets}</span></div>`;
+  }
+  h+=`<div class="row" style="border-top:1px solid var(--gdimmer);margin-top:2px;padding-top:2px"><span class="lbl">TOTAL</span><span class="val" style="font-size:10px">${(routes.total_networks||0)+(routes.total_subnets||0)}</span></div>`;
+  h+='</div></div>';
+
+  h+='</div>'; // center col
+
+  // ===== RIGHT COLUMN =====
+  h+='<div class="col">';
+
+  // Interfaces — sourced from 'show interfaces description' (routers + switches),
+  // enriched with speed/type from 'show interfaces status' when available.
+  if(idesc.length){
+    const upCount=idesc.filter(i=>i.link).length;
+    h+=`<div class="panel"><div class="panel-title">INTERFACES (${upCount}/${idesc.length} UP)</div><div class="panel-body"><div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>PORT</th><th>DESCRIPTION</th><th>STATUS</th><th class="r">SPEED</th><th class="r">TYPE</th></tr></thead><tbody>`;
+    for(const i of idesc){
+      const s=statByPort[i.port]||{};
+      const dt=i.link?dot('ok',false):i.status==='admin down'?dot('dim',false):dot('err',false);
+      const stCol=i.link?'var(--g2)':i.status==='admin down'?'var(--amber)':'var(--g3)';
+      const speed=s.speed||'—';
+      const speedCol=/1000|10G/.test(speed)?'var(--g2)':speed==='a-100'?'var(--amber)':'var(--g3)';
+      h+=`<tr><td>${dt}<b>${i.port}</b></td><td style="color:var(--g3);font-size:7px;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.description||''}</td><td style="color:${stCol};font-size:7px">${i.status}/${i.protocol}</td><td class="r" style="color:${speedCol}">${speed}</td><td class="r" style="color:var(--gdim);font-size:7px">${s.type||'—'}</td></tr>`;
+    }
+    h+='</tbody></table></div></div></div>';
+  } else {
+    // Fallback: legacy 'show interfaces status' rendering (connected only)
+    h+=`<div class="panel"><div class="panel-title">CONNECTED INTERFACES (${connected.length})</div><div class="panel-body"><div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>PORT</th><th>NAME</th><th class="r">VLAN</th><th class="r">SPEED</th><th class="r">TYPE</th></tr></thead><tbody>`;
+    for(const i of connected){
+      const short=i.port.replace('GigabitEthernet','Gi').replace('TenGigabitEthernet','Te');
+      const speedCol=/1000|10G/.test(i.speed)?'var(--g2)':i.speed==='a-100'?'var(--amber)':'var(--g3)';
+      h+=`<tr><td>${dot('ok',false)}<b>${short}</b></td><td style="color:var(--g3);font-size:7px;max-width:80px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.name||''}</td><td class="r" style="color:var(--cyan)">${i.vlan}</td><td class="r" style="color:${speedCol}">${i.speed}</td><td class="r" style="color:var(--gdim);font-size:7px">${i.type}</td></tr>`;
+    }
+    h+='</tbody></table></div></div></div>';
+  }
+
+  // Hardware Inventory (Optics)
+  if(optics.length){
+    h+=`<div class="panel"><div class="panel-title">OPTICS INVENTORY (${optics.length})</div><div class="panel-body"><div class="scroll" style="max-height:120px"><table class="tbl"><thead><tr><th>PORT</th><th>PID</th><th>SERIAL</th></tr></thead><tbody>`;
+    for(const o of optics) h+=`<tr><td style="color:var(--g)">${o.name}</td><td style="color:var(--g2)">${o.pid}</td><td style="color:var(--g3)">${o.serial}</td></tr>`;
+    h+='</tbody></table></div></div></div>';
+  }
+
+  // Event Log
+  const logCls=logs.some(l=>l.severity<=4)?'panel warning':'panel';
+  h+=`<div class="${logCls}"><div class="panel-title">EVENT LOG</div><div class="panel-body"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="tab ${logFilter==='all'?'active':''}" onclick="logFilter='all';render(currentData)">ALL</span><span class="tab ${logFilter==='warn'?'active':''}" onclick="logFilter='warn';render(currentData)">WARN+</span><span class="tab ${logFilter==='optic'?'active':''}" onclick="logFilter='optic';render(currentData)">OPTICS</span><span style="font-size:7px;color:var(--gdim);margin-left:auto">${filteredLogs.length} entries</span></div><div class="scroll" style="max-height:200px">`;
+  for(const l of filteredLogs){
+    const col=SEV_COLOR[l.severity]||'var(--g2)';
+    const fc=facColor(l.facility);
+    h+=`<div class="log-entry"><span class="log-ts">${l.timestamp||''}</span><span class="log-sev" style="color:${col}">${SEV_LABEL[l.severity]||l.severity}</span><span style="word-break:break-all"><span class="log-fac" style="color:${fc}">%${l.facility}-${l.severity}-${l.mnemonic}:</span> <span style="color:var(--g2)">${l.message}</span></span></div>`;
+  }
+  if(!filteredLogs.length) h+='<div style="color:var(--g3);text-align:center;padding:8px">NO LOG ENTRIES</div>';
+  h+='</div></div></div>';
+
+  // Port Summary
+  h+=`<div class="panel"><div class="panel-title">PORT SUMMARY</div><div class="panel-body"><div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap"><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g)">${connected.length}</div><div class="lbl">CONNECTED</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--gdim)">${notconnect.length}</div><div class="lbl">NOT CONNECT</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:rgba(255,51,51,.5)">${disabled.length}</div><div class="lbl">DISABLED</div></div>${errDisabled.length?`<div style="text-align:center"><div class="val" style="font-size:14px;color:var(--red)">${errDisabled.length}</div><div class="lbl">ERR-DISABLED</div></div>`:''}</div></div></div>`;
+
+  h+='</div>'; // right col
+  h+='</div>'; // grid
+
+  // FOOTER
+  h+=`<div class="footer"><span>POLL:${meta.poll_count||0} | ${meta.poll_time||'---'}s | CPU:${cpu.five_sec||0}%/${cpu.five_sec_interrupt||0}% | FAN:${env.fan_status||'---'}</span><span style="animation:pulse 2s infinite">${dot('ok',false)} TELEMETRY ${meta.error?'<span style="color:var(--amber)">DEGRADED</span>':'ACTIVE'}</span><span>STP:${stp.mode||'---'} | MAC:${(mac.total||0).toLocaleString()} | ${connected.length}/${intfs.length} PORTS | ${lldp.length} LLDP</span></div>`;
+
+  document.getElementById('app').innerHTML=h;
+}
+
+/* ==============================================================
+   MODULE: SSH TERMINAL (xterm.js)
+   ============================================================== */
+const TerminalMgr={
+  _term:null,_fitAddon:null,_ws:null,_open:false,
+  toggle(){this._open?this.close():this.open()},
+  open(){
+    document.getElementById('term-overlay').classList.add('open');
+    document.getElementById('term-fab').classList.add('active');
+    this._open=true;
+    if(!this._term){
+      this._term=new window.Terminal({cursorBlink:true,fontSize:13,fontFamily:"'Courier New','Lucida Console',monospace",theme:this._getTheme(),scrollback:5000});
+      this._fitAddon=new window.FitAddon.FitAddon();
+      this._term.loadAddon(this._fitAddon);
+      this._term.open(document.getElementById('term-body'));
+      this._fitAddon.fit();
+      this._ro=new ResizeObserver(()=>{if(this._fitAddon&&this._open){this._fitAddon.fit();if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}))}});
+      this._ro.observe(document.getElementById('term-body'));
+    }else{this._term.options.theme=this._getTheme();setTimeout(()=>this._fitAddon.fit(),50)}
+    if(!this._ws||this._ws.readyState!==WebSocket.OPEN)this._connect();
+  },
+  close(){document.getElementById('term-overlay').classList.remove('open');document.getElementById('term-fab').classList.remove('active');this._open=false},
+  reconnect(){if(this._ws)try{this._ws.close()}catch(e){}if(this._term)this._term.clear();this._connect()},
+  _getTheme(){const a=Theme.current()==='amber';return{background:a?'#0a0800':'#080a08',foreground:a?'#ff9500':'#00ff41',cursor:a?'#ff9500':'#00ff41',selectionBackground:a?'rgba(255,149,0,0.25)':'rgba(0,255,65,0.25)'}},
+  _connect(){
+    const st=document.getElementById('term-status');st.textContent='CONNECTING...';
+    const url=`${WS_BASE}/ws/terminal${_sessionId?'?session='+_sessionId:''}`;
+    this._ws=new WebSocket(url);
+    this._ws.binaryType='arraybuffer';
+    this._ws.onopen=()=>{st.textContent='CONNECTED';this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}))};
+    this._ws.onmessage=(e)=>{e.data instanceof ArrayBuffer?this._term.write(new Uint8Array(e.data)):this._term.write(e.data)};
+    this._ws.onclose=()=>{st.textContent='DISCONNECTED'};
+    this._ws.onerror=()=>{st.textContent='CONNECTION ERROR'};
+    this._term.onData((data)=>{if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(data)});
+  }
+};
+
+/* ==============================================================
+   MODULE: LOGIN MODAL
+   ============================================================== */
+const LoginModal = {
+  overlay: null,
+
+  async init() {
+    this.overlay = document.getElementById('loginOverlay');
+    const params = new URLSearchParams(window.location.search);
+
+    // Attach to a session a host process already established (nhd desktop
+    // POSTs /api/connect itself so key material never rides the URL). The
+    // resume path below validates this id via /api/status and attaches.
+    const _urlSession = params.get('session');
+    if (_urlSession) _setSession(_urlSession);
+
+    let defaults = {};
+    try {
+      const r = await fetch('/api/defaults');
+      if (r.ok) defaults = await r.json();
+    } catch(e) {}
+
+    const val = (key, fb='') => params.get(key) || defaults[key] || fb;
+    document.getElementById('lf-host').value    = val('host');
+    document.getElementById('lf-user').value    = val('username');
+    document.getElementById('lf-pass').value    = params.get('password') || '';
+    document.getElementById('lf-dtype').value   = val('device_type', 'cisco_ios');
+    const _DTYPE_LABELS = {arista_eos:'ARISTA EOS',juniper_junos:'JUNIPER JUNOS',cisco_ios:'CISCO IOS',cisco_xe:'CISCO IOS-XE',cisco_nxos:'CISCO NX-OS',linux:'LINUX'};
+    {
+      const _dt = document.getElementById('lf-dtype').value;
+      const _hl = document.getElementById('lf-hud-label');
+      if (_hl) _hl.textContent = (_DTYPE_LABELS[_dt] || (_dt||'').toUpperCase()) + ' HUD';
+    }
+    // AUTH METHOD: device_type is locked to this server's vendor above
+    // (override only via ?device_type= in the URL). The modal picks password
+    // or SSH key and shows just that field.
+    const _useKeys = params.get('auth')
+      ? (params.get('auth') === 'key')
+      : ((params.get('use_keys') || String(defaults.use_keys)) === 'true');
+    document.getElementById('lf-auth').value = _useKeys ? 'key' : 'password';
+    const _applyAuthMode = () => {
+      const mode = document.getElementById('lf-auth').value;
+      const pL = document.getElementById('lf-pass').closest('label');
+      const kL = document.getElementById('lf-keyfile').closest('label');
+      if (pL) {
+        pL.style.display = mode === 'password' ? '' : 'none';
+        if (pL.parentElement) pL.parentElement.style.gridTemplateColumns = mode === 'password' ? '1fr 1fr' : '1fr';
+      }
+      if (kL) {
+        kL.style.display = mode === 'key' ? '' : 'none';
+        if (kL.parentElement) kL.parentElement.style.gridTemplateColumns = mode === 'key' ? '1fr 1fr' : '1fr';
+      }
+    };
+    _applyAuthMode();
+    document.getElementById('lf-auth').addEventListener('change', _applyAuthMode);
+    document.getElementById('lf-legacy').checked = (params.get('legacy_ssh') || String(defaults.legacy_ssh)) === 'true';
+
+    document.getElementById('loginClose').onclick = () => this.dismiss();
+    document.getElementById('loginFields').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') this.connect();
+    });
+
+    if (params.get('host') && params.get('autoconnect') === 'true') {
+      this.connect();
+      return;
+    }
+
+    // Resume existing session if valid
+    if (_sessionId) {
+      try {
+        const sr = await fetch(`/api/status?session=${_sessionId}`);
+        const sd = await sr.json();
+        if (sd.hostname && sd.hostname !== 'not connected') {
+          const shortHost = sd.hostname.split('.')[0].toUpperCase();
+<!--          document.title = `${shortHost} — HUD`;-->
+          this.dismiss();
+          return;
+        }
+      } catch(e) {}
+      _setSession(null);
+    }
+
+    if (!params.get('host') && !params.get('username')) {
+      this.overlay.style.display = 'flex';
+      return;
+    }
+
+    this.overlay.style.display = 'flex';
+  },
+
+  async connect() {
+    const btn = document.getElementById('loginBtn');
+    const status = document.getElementById('loginStatus');
+    btn.disabled = true;
+    btn.textContent = '⟳ CONNECTING...';
+    status.style.color = '#00ff41';
+    status.textContent = 'Establishing SSH session...';
+
+    const body = {
+      host:        document.getElementById('lf-host').value.trim(),
+      username:    document.getElementById('lf-user').value.trim(),
+      device_type: document.getElementById('lf-dtype').value,
+      legacy_ssh:  document.getElementById('lf-legacy').checked,
+    };
+    if (_sessionId) body.session_id = _sessionId;
+    const _authMode = document.getElementById('lf-auth').value;
+    if (_authMode === 'password') {
+      const pass = document.getElementById('lf-pass').value;
+      if (pass) body.password = pass;
+    } else {
+      const keyInput = document.getElementById('lf-keyfile');
+      if (keyInput.files && keyInput.files.length > 0) {
+        body.key_text = await keyInput.files[0].text();
+      }
+    }
+
+    if (!body.host) {
+      status.style.color = '#ffaa00';
+      status.textContent = 'Host is required';
+      btn.disabled = false;
+      btn.textContent = '▶ CONNECT';
+      return;
+    }
+
+    try {
+      const r = await fetch('/api/connect', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(body),
+      });
+      const data = await r.json();
+
+      if (data.status === 'ok') {
+        _setSession(data.session_id);
+        status.textContent = `Connected to ${data.host}`;
+        _connectHost = data.host;
+        const shortHost = data.host.split('.')[0].toUpperCase();
+<!--        document.title = `${shortHost} — HUD`;-->
+
+        // Show loading overlay immediately
+        let lo = document.getElementById('load-overlay');
+        if (lo) {
+          lo.style.display = 'flex';
+        } else {
+          lo = document.createElement('div');
+          lo.className = 'load-overlay';
+          lo.id = 'load-overlay';
+          lo.innerHTML = '<div class="load-title">INITIALIZING TELEMETRY</div>'
+            + '<div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>'
+            + '<div class="load-cmd" id="load-cmd">CONNECTING...</div>'
+            + '<div class="load-elapsed" id="load-elapsed"></div>'
+            + '<div class="load-steps" id="load-steps"></div>';
+          document.body.prepend(lo);
+        }
+
+        // Connect WS now so progress messages are received
+        connect();
+
+        // Dismiss modal after brief flash (don't call dismiss() — avoids double connect)
+        setTimeout(() => {
+          if (this.overlay) this.overlay.style.display = 'none';
+        }, 300);
+      } else {
+        status.style.color = '#ff3333';
+        status.textContent = data.message || 'Connection failed';
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+      }
+    } catch(e) {
+      status.style.color = '#ff3333';
+      status.textContent = `Error: ${e.message}`;
+      btn.disabled = false;
+      btn.textContent = '▶ CONNECT';
+    }
+  },
+
+  dismiss() {
+    if (this.overlay) this.overlay.style.display = 'none';
+    if (window.location.search) {
+      history.replaceState(null, '', window.location.pathname);
+    }
+    // Only connect if WS isn't already open
+    if (!ws || ws.readyState > WebSocket.OPEN) connect();
+  },
+};
+
+/* ==============================================================
+   MODULE: PROGRESS OVERLAY
+   ============================================================== */
+let _progressTimer = null;
+let _progressT0 = null;
+
+function _updateProgress(p) {
+  const overlay = document.getElementById('load-overlay');
+  if (!overlay) return;
+  overlay.style.display = 'flex';
+
+  // Start client-side elapsed timer on first progress event
+  if (!_progressTimer) {
+    _progressT0 = Date.now() - (p.elapsed * 1000);
+    _progressTimer = setInterval(() => {
+      const el = document.getElementById('load-elapsed');
+      if (el) el.textContent = ((Date.now() - _progressT0) / 1000).toFixed(1) + 's';
+    }, 500);
+  }
+
+  if (p.phase === 'start') {
+    const cmd = document.getElementById('load-cmd');
+    if (cmd) cmd.textContent = 'COLLECTING ' + p.command.toUpperCase().replace(/_/g, ' ') + '...';
+  } else {
+    const pct = Math.round((p.index / p.total) * 100);
+    const bar = document.getElementById('load-bar');
+    if (bar) bar.style.width = pct + '%';
+    const cmd = document.getElementById('load-cmd');
+    if (cmd) cmd.textContent = p.command.toUpperCase().replace(/_/g, ' ') + ' \u2713';
+    _completedCmds.push(p.command);
+    const steps = document.getElementById('load-steps');
+    if (steps) steps.textContent = _completedCmds.map(
+      c => c.toUpperCase().replace(/_/g, ' ')
+    ).join(' \u00b7 ');
+  }
+}
+
+function _dismissOverlay() {
+  const o = document.getElementById('load-overlay');
+  if (o) o.remove();
+  _completedCmds = [];
+  if (_progressTimer) { clearInterval(_progressTimer); _progressTimer = null; }
+  _progressT0 = null;
+}
+
+/* ==============================================================
+   MODULE: WEBSOCKET CONNECTION
+   ============================================================== */
+function connect() {
+  if (!_sessionId) return;
+  ws = new WebSocket(`${WS_BASE}/ws?session=${_sessionId}`);
+  ws.onopen = () => { const b = document.getElementById('conn-status'); if (b) b.remove(); };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if (msg.error) {
+        console.warn('WS session error:', msg.error);
+        _setSession(null);
+        return;
+      }
+      if (msg._progress) {
+        _updateProgress(msg._progress);
+        return;
+      }
+      _dismissOverlay();
+      currentData = msg;
+      render(currentData);
+    } catch(x) { console.error(x); }
+  };
+  ws.onclose = () => { if (_sessionId) setTimeout(connect, 3000); };
+  ws.onerror = (e) => console.error('WS error', e);
+}
+
+LoginModal.init();
+  const params = new URLSearchParams(location.search);
+const devName = params.get('name');
+if(devName) document.title = `${devName} — HUD`;
+</script>
+</body>
+</html>

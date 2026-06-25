@@ -1,0 +1,719 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="green">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HUD — Launcher</title>
+<style>
+  [data-theme="green"] {
+    --g: #00ff41; --g2: #00cc33; --g3: #009922; --gdim: #004d15; --gdimmer: #002a0a;
+    --red: #ff3333; --amber: #ffaa00; --cyan: #00ddff;
+    --bg: #080a08; --bg2: #0e120eee; --bg3: #141a14;
+    --scan: rgba(0,255,65,0.012);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+    --glow: 0 0 8px rgba(0,255,65,0.25);
+  }
+  [data-theme="amber"] {
+    --g: #ff9500; --g2: #e07800; --g3: #a85800; --gdim: #5a3200; --gdimmer: #2e1a00;
+    --red: #ff4444; --amber: #ffcc00; --cyan: #ffcc66;
+    --bg: #0a0800; --bg2: #12100aee; --bg3: #1a1508;
+    --scan: rgba(255,149,0,0.010);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+    --glow: 0 0 8px rgba(255,149,0,0.25);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--g); font-family:var(--mono); font-size:10px; overflow:hidden; height:100vh; }
+  body::after {
+    content:''; position:fixed; inset:0; pointer-events:none; z-index:1000;
+    background:repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan) 2px, var(--scan) 4px);
+  }
+  @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ═══════ Layout ═══════ */
+  .layout { display:grid; grid-template-columns:240px 1fr; height:100vh; }
+
+  /* ═══════ Sidebar ═══════ */
+  .sidebar { background:var(--bg2); border-right:1px solid var(--gdim); display:flex; flex-direction:column; overflow:hidden; }
+  .sidebar-header { padding:14px 14px 10px; border-bottom:1px solid var(--gdim); }
+  .sidebar-brand { font-size:14px; letter-spacing:4px; font-weight:bold; margin-bottom:2px; }
+  .sidebar-brand span { color:var(--g3); font-weight:normal; font-size:9px; letter-spacing:2px; }
+  .sidebar-sub { font-size:8px; color:var(--gdim); letter-spacing:1px; margin-bottom:10px; }
+  .search-wrap { position:relative; }
+  .search {
+    width:100%; background:var(--bg); border:1px solid var(--gdim);
+    color:var(--g); font-family:var(--mono); font-size:10px;
+    padding:6px 8px 6px 22px; outline:none;
+  }
+  .search:focus { border-color:var(--g3); box-shadow:var(--glow); }
+  .search::placeholder { color:var(--gdim); }
+  .search-icon { position:absolute; left:7px; top:50%; transform:translateY(-50%); color:var(--gdim); font-size:9px; pointer-events:none; }
+
+  .device-list { flex:1; overflow-y:auto; padding:4px 0; }
+  .device-list::-webkit-scrollbar { width:3px; }
+  .device-list::-webkit-scrollbar-track { background:var(--bg); }
+  .device-list::-webkit-scrollbar-thumb { background:var(--g3); }
+
+  .group-label { font-size:7px; letter-spacing:2px; color:var(--gdim); padding:10px 14px 3px; text-transform:uppercase; }
+  .device-item {
+    display:flex; align-items:center; gap:7px;
+    padding:6px 14px; cursor:pointer; border-left:2px solid transparent; transition:all .12s;
+  }
+  .device-item:hover { background:rgba(0,255,65,0.04); border-left-color:var(--g3); }
+  .dot { width:5px; height:5px; border-radius:50%; flex-shrink:0; }
+  .dot-on { background:var(--g); box-shadow:0 0 4px var(--g); }
+  .dot-off { background:var(--red); box-shadow:0 0 4px var(--red); animation:blink .8s infinite; }
+  .dot-idle { background:var(--gdim); }
+  .dot-pending { background:var(--amber); box-shadow:0 0 4px var(--amber); animation:pulse 1s infinite; }
+  .dev-name { flex:1; font-size:9px; color:var(--g2); }
+  .device-item:hover .dev-name { color:var(--g); }
+  .dev-type { font-size:7px; color:var(--gdim); letter-spacing:1px; text-transform:uppercase; }
+
+  .sidebar-footer {
+    padding:8px 14px; border-top:1px solid var(--gdim);
+    font-size:8px; color:var(--gdim);
+    display:flex; justify-content:space-between; align-items:center;
+  }
+  .theme-btn, .import-btn {
+    cursor:pointer; font-size:8px; letter-spacing:1px; padding:3px 8px;
+    border:1px solid var(--gdim); background:transparent; color:var(--g3);
+    font-family:inherit; text-transform:uppercase;
+  }
+  .theme-btn:hover, .import-btn:hover { color:var(--g); border-color:var(--g3); }
+  .import-btn { margin-left:6px; }
+
+  /* ═══════ Main area ═══════ */
+  .main { display:flex; flex-direction:column; overflow:hidden; }
+  .main-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 16px; border-bottom:1px solid var(--gdim); flex-shrink:0;
+  }
+  .main-title { font-size:12px; letter-spacing:3px; color:var(--g); }
+  .main-title span { color:var(--g3); font-size:9px; }
+  .main-actions { display:flex; gap:6px; align-items:center; }
+
+  .svc-grid {
+    flex:1; overflow-y:auto; padding:16px;
+    display:grid; grid-template-columns:repeat(2, 1fr); gap:12px; align-content:start;
+  }
+  .svc-grid::-webkit-scrollbar { width:3px; }
+  .svc-grid::-webkit-scrollbar-track { background:var(--bg); }
+  .svc-grid::-webkit-scrollbar-thumb { background:var(--g3); }
+
+  /* ═══════ Service cards ═══════ */
+  .svc-card {
+    border:1px solid var(--gdim); background:var(--bg2); display:flex; flex-direction:column;
+    position:relative; transition:border-color .3s;
+  }
+  .svc-card.running { border-color:var(--g3); }
+  .svc-card.stopped { border-color:rgba(255,51,51,0.2); }
+  .svc-card.pending { border-color:var(--amber); }
+  .svc-card::before, .svc-card::after { content:''; position:absolute; width:10px; height:10px; pointer-events:none; }
+  .svc-card::before { top:-1px; left:-1px; border-top:1.5px solid var(--g3); border-left:1.5px solid var(--g3); }
+  .svc-card::after { top:-1px; right:-1px; border-top:1.5px solid var(--g3); border-right:1.5px solid var(--g3); }
+  .svc-card.stopped::before, .svc-card.stopped::after { border-color:rgba(255,51,51,0.3); }
+  .svc-card.pending::before, .svc-card.pending::after { border-color:var(--amber); }
+
+  .svc-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:8px 12px 6px; border-bottom:1px solid var(--gdimmer);
+  }
+  .svc-label { font-size:12px; font-weight:bold; letter-spacing:2px; }
+  .svc-card.running .svc-label { color:var(--g); }
+  .svc-card.stopped .svc-label { color:var(--g3); }
+  .svc-card.pending .svc-label { color:var(--amber); }
+  .svc-port { font-size:9px; color:var(--gdim); letter-spacing:1px; }
+
+  .svc-body { padding:8px 12px; flex:1; }
+  .svc-row { display:flex; justify-content:space-between; padding:2px 0; font-size:9px; }
+  .svc-lbl { color:var(--g3); font-size:8px; letter-spacing:1px; text-transform:uppercase; }
+  .svc-val { color:var(--g2); }
+  .svc-val.ok { color:var(--g); }
+  .svc-val.err { color:var(--red); }
+  .svc-val.dim { color:var(--gdim); }
+  .svc-val.warn { color:var(--amber); }
+
+  .svc-log {
+    margin-top:6px; padding-top:6px; border-top:1px solid var(--gdimmer);
+    max-height:100px; overflow-y:auto; font-size:7.5px; color:var(--gdim); line-height:1.5;
+  }
+  .svc-log::-webkit-scrollbar { width:2px; }
+  .svc-log::-webkit-scrollbar-thumb { background:var(--gdimmer); }
+  .svc-log .log-line { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .svc-log .log-err { color:var(--red); }
+  .svc-log .log-warn { color:var(--amber); }
+
+  .svc-controls {
+    display:flex; gap:0; border-top:1px solid var(--gdimmer);
+  }
+  .svc-btn {
+    flex:1; padding:6px; text-align:center; font-family:var(--mono);
+    font-size:8px; letter-spacing:1px; text-transform:uppercase;
+    border:none; cursor:pointer; background:transparent; color:var(--g3);
+    border-right:1px solid var(--gdimmer); transition:all .12s;
+  }
+  .svc-btn:last-child { border-right:none; }
+  .svc-btn:hover:not(:disabled) { background:rgba(0,255,65,0.06); color:var(--g); }
+  .svc-btn.start:hover:not(:disabled) { color:var(--g); }
+  .svc-btn.stop:hover:not(:disabled) { color:var(--red); }
+  .svc-btn.restart:hover:not(:disabled) { color:var(--amber); }
+  .svc-btn:disabled { opacity:0.3; cursor:default; }
+  .svc-btn:disabled:hover { background:transparent; color:var(--g3); }
+
+  /* ═══════ Import Modal ═══════ */
+  .modal-overlay {
+    position:fixed; inset:0; background:rgba(0,0,0,0.85); z-index:900;
+    display:none; align-items:center; justify-content:center;
+  }
+  .modal-overlay.active { display:flex; }
+  .modal {
+    background:var(--bg2); border:1px solid var(--g3); width:480px; max-width:90vw;
+    position:relative;
+  }
+  .modal::before, .modal::after { content:''; position:absolute; width:14px; height:14px; pointer-events:none; }
+  .modal::before { top:-1px; left:-1px; border-top:2px solid var(--g); border-left:2px solid var(--g); }
+  .modal::after { top:-1px; right:-1px; border-top:2px solid var(--g); border-right:2px solid var(--g); }
+  .modal-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:10px 14px; border-bottom:1px solid var(--gdim);
+  }
+  .modal-title { font-size:11px; letter-spacing:2px; font-weight:bold; }
+  .modal-close {
+    background:none; border:none; color:var(--gdim); font-size:14px;
+    cursor:pointer; font-family:var(--mono); padding:2px 6px;
+  }
+  .modal-close:hover { color:var(--red); }
+  .modal-body { padding:14px; }
+
+  .drop-zone {
+    border:1px dashed var(--gdim); padding:28px 16px; text-align:center;
+    cursor:pointer; transition:all .2s; margin-bottom:12px;
+  }
+  .drop-zone:hover, .drop-zone.dragover {
+    border-color:var(--g3); background:rgba(0,255,65,0.03);
+  }
+  .drop-zone-text { font-size:9px; color:var(--gdim); letter-spacing:1px; }
+  .drop-zone-text strong { color:var(--g3); }
+  .drop-zone-sub { font-size:7px; color:var(--gdimmer); margin-top:4px; letter-spacing:1px; }
+
+  .import-field { margin-bottom:10px; }
+  .import-label { font-size:8px; color:var(--g3); letter-spacing:1px; margin-bottom:3px; text-transform:uppercase; }
+  .import-input {
+    width:100%; background:var(--bg); border:1px solid var(--gdim);
+    color:var(--g); font-family:var(--mono); font-size:10px; padding:5px 8px; outline:none;
+  }
+  .import-input:focus { border-color:var(--g3); box-shadow:var(--glow); }
+
+  .import-row { display:flex; gap:8px; }
+  .import-row .import-field { flex:1; }
+
+  .import-preview {
+    border:1px solid var(--gdimmer); padding:8px; margin:10px 0;
+    max-height:120px; overflow-y:auto; font-size:8px; color:var(--gdim); display:none;
+  }
+  .import-preview::-webkit-scrollbar { width:2px; }
+  .import-preview::-webkit-scrollbar-thumb { background:var(--gdimmer); }
+  .import-preview .preview-line { padding:1px 0; }
+  .import-preview .preview-line .pv-name { color:var(--g2); }
+  .import-preview .preview-line .pv-ip { color:var(--gdim); }
+  .import-preview .preview-line .pv-type { color:var(--g3); font-size:7px; }
+
+  .import-actions { display:flex; gap:8px; justify-content:flex-end; padding-top:8px; border-top:1px solid var(--gdimmer); }
+  .btn-import, .btn-cancel {
+    font-family:var(--mono); font-size:9px; letter-spacing:1px; padding:5px 14px;
+    border:1px solid var(--gdim); background:transparent; color:var(--g3);
+    cursor:pointer; text-transform:uppercase;
+  }
+  .btn-import:hover { color:var(--g); border-color:var(--g3); background:rgba(0,255,65,0.06); }
+  .btn-cancel:hover { color:var(--red); border-color:rgba(255,51,51,0.3); }
+  .btn-import:disabled { opacity:0.3; cursor:default; }
+
+  .import-result { font-size:9px; padding:8px 0 4px; display:none; }
+  .import-result.ok { color:var(--g); }
+  .import-result.err { color:var(--red); }
+
+  /* ═══════ Footer ═══════ */
+  .main-footer {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:6px 16px; border-top:1px solid var(--gdim);
+    font-size:8px; color:var(--gdim); flex-shrink:0;
+  }
+
+  @media (max-width:900px) { .svc-grid { grid-template-columns:1fr; } }
+  @media (max-width:640px) { .layout { grid-template-columns:1fr; } .sidebar { display:none; } }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- ═══════ Sidebar — Device Inventory ═══════ -->
+  <div class="sidebar">
+    <div class="sidebar-header">
+      <div class="sidebar-brand">HUD <span>LAUNCHER</span></div>
+      <div class="sidebar-sub">DEVICE INVENTORY</div>
+      <div class="search-wrap">
+        <span class="search-icon">▸</span>
+        <input class="search" id="search" type="text" placeholder="FILTER..." spellcheck="false" autocomplete="off">
+      </div>
+    </div>
+    <div class="device-list" id="device-list"></div>
+    <div class="sidebar-footer">
+      <span id="dev-count">—</span>
+      <div>
+        <button class="import-btn" onclick="openImportModal()" title="Import Secure Cartography topology">IMPORT</button>
+        <button class="theme-btn" id="theme-btn" onclick="toggleTheme()">AMBER</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════ Main — Service Cards ═══════ -->
+  <div class="main">
+    <div class="main-header">
+      <div class="main-title">SERVICES <span>// HUD SERVER INSTANCES</span></div>
+    </div>
+    <div class="svc-grid" id="svc-grid"></div>
+    <div class="main-footer">
+      <span>HUD LAUNCHER v1.1</span>
+      <span id="footer-status" style="animation:pulse 2s infinite">● CONNECTING</span>
+      <span id="footer-ts"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════ Import Modal ═══════ -->
+<div class="modal-overlay" id="import-overlay">
+  <div class="modal">
+    <div class="modal-header">
+      <span class="modal-title">IMPORT TOPOLOGY</span>
+      <button class="modal-close" onclick="closeImportModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="drop-zone" id="drop-zone">
+        <div class="drop-zone-text">Drop <strong>topology.json</strong> here or click to browse</div>
+        <div class="drop-zone-sub">SECURE CARTOGRAPHY FORMAT</div>
+        <input type="file" id="file-input" accept=".json" style="display:none">
+      </div>
+      <div id="import-file-name" style="font-size:8px;color:var(--g3);margin-bottom:10px;display:none"></div>
+
+      <div class="import-row">
+        <div class="import-field">
+          <div class="import-label">SSH USERNAME</div>
+          <input class="import-input" id="import-username" type="text" value="admin" spellcheck="false">
+        </div>
+        <div class="import-field">
+          <div class="import-label">GROUP</div>
+          <input class="import-input" id="import-group" type="text" value="IMPORTED" spellcheck="false">
+        </div>
+      </div>
+
+      <div class="import-preview" id="import-preview"></div>
+      <div class="import-result" id="import-result"></div>
+
+      <div class="import-actions">
+        <button class="btn-cancel" onclick="clearImportData()">CLEAR</button>
+        <button class="btn-import" id="btn-do-import" onclick="doImport()" disabled>IMPORT DEVICES</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const WS_URL = `${location.protocol==='https:'?'wss':'ws'}://${location.host}/ws`;
+let ws = null;
+let config = { servers:{}, devices:[], dtype_map:{} };
+let statuses = {};  // key -> server status
+let pendingLocal = {};  // key -> action (client-side immediate feedback)
+let importedTopology = null;
+
+const VENDOR_SHORT = { arista_eos:'ARISTA', juniper_junos:'JUNOS', cisco_ios:'IOS', linux:'LINUX' };
+const VENDOR_LABEL = { arista_eos:'Arista EOS', juniper_junos:'Juniper JUNOS', cisco_ios:'Cisco IOS', linux:'Linux' };
+
+/* ═══════ Theme ═══════ */
+function currentTheme(){ return document.documentElement.getAttribute('data-theme')||'green'; }
+function toggleTheme(){
+  const n = currentTheme()==='green'?'amber':'green';
+  document.documentElement.setAttribute('data-theme', n);
+  localStorage.setItem('hud-launcher-theme', n);
+  document.getElementById('theme-btn').textContent = n==='green'?'AMBER':'GREEN';
+}
+(function(){
+  const s = localStorage.getItem('hud-launcher-theme');
+  if(s) document.documentElement.setAttribute('data-theme', s);
+  document.getElementById('theme-btn').textContent = currentTheme()==='green'?'AMBER':'GREEN';
+})();
+
+/* ═══════ URL builder ═══════ */
+function buildURL(dev){
+  const serverKey = config.dtype_map[dev.device_type];
+  const srv = config.servers[serverKey];
+  if(!srv) return null;
+  const params = new URLSearchParams();
+  params.set('host', dev.host);
+  params.set('username', dev.username);
+  params.set('device_type', dev.device_type);
+  if(dev.name) params.set('name', dev.name);
+  if(dev.password) params.set('password', dev.password);
+  if(dev.legacy_ssh) params.set('legacy_ssh', '1');
+  params.set('autoconnect', 'false');
+  return `${location.protocol}//127.0.0.1:${srv.port}/?${params.toString()}`;
+}
+
+/* ═══════ Server status for a device_type ═══════ */
+function serverForType(dtype){
+  const key = config.dtype_map[dtype];
+  return key ? statuses[key] : null;
+}
+
+/* ═══════ Sidebar — Device List ═══════ */
+function renderDevices(){
+  const list = document.getElementById('device-list');
+  const filter = document.getElementById('search').value.toLowerCase();
+  const groups = {};
+
+  config.devices.forEach(d => {
+    if(filter){
+      const hay = [d.name, d.host, d.device_type, d.group||'', ...(d.tags||[])].join(' ').toLowerCase();
+      if(!hay.includes(filter)) return;
+    }
+    const g = d.group || 'OTHER';
+    if(!groups[g]) groups[g] = [];
+    groups[g].push(d);
+  });
+
+  let html = '';
+  for(const [group, devs] of Object.entries(groups)){
+    html += `<div class="group-label">${escHtml(group)}</div>`;
+    devs.forEach(d => {
+      const ss = serverForType(d.device_type);
+      const serverKey = config.dtype_map[d.device_type];
+      const isPending = pendingLocal[serverKey] || (ss && ss.pending);
+      let dotCls;
+      if(isPending) dotCls = 'dot-pending';
+      else if(ss && ss.reachable) dotCls = 'dot-on';
+      else dotCls = 'dot-idle';
+
+      html += `<div class="device-item" onclick="openDevice(this)"
+        data-host="${escAttr(d.host)}"
+        data-user="${escAttr(d.username)}"
+        data-type="${escAttr(d.device_type)}"
+        data-name="${escAttr(d.name||'')}"
+        data-legacy="${d.legacy_ssh||''}"
+        title="${escAttr(d.platform||d.host)}">
+        <div class="dot ${dotCls}"></div>
+        <span class="dev-name">${escHtml(d.name)}</span>
+        <span class="dev-type">${VENDOR_SHORT[d.device_type]||d.device_type}</span>
+      </div>`;
+    });
+  }
+  list.innerHTML = html;
+
+  const total = config.devices.length;
+  const shown = Object.values(groups).reduce((a,g) => a+g.length, 0);
+  document.getElementById('dev-count').textContent = filter ? `${shown}/${total}` : `${total} DEVICES`;
+}
+
+function openDevice(el){
+  const dev = {
+    host: el.dataset.host,
+    username: el.dataset.user,
+    device_type: el.dataset.type,
+    name: el.dataset.name,
+    legacy_ssh: el.dataset.legacy === 'true',
+  };
+  const url = buildURL(dev);
+  if(url) window.open(url, `hud_${dev.host}`);
+}
+
+/* ═══════ Service Cards ═══════ */
+function renderServices(){
+  const grid = document.getElementById('svc-grid');
+  const serverKeys = Object.keys(config.servers);
+  if(!serverKeys.length){
+    grid.innerHTML = '<div style="color:var(--gdim);padding:40px;text-align:center;letter-spacing:2px;grid-column:1/-1">LOADING CONFIGURATION...</div>';
+    return;
+  }
+
+  let html = '';
+  serverKeys.forEach(key => {
+    const srv = config.servers[key];
+    const s = statuses[key] || {};
+    const running = s.process_running === true;
+    const reachable = s.reachable === true;
+    const pending = pendingLocal[key] || s.pending;
+    const pendingAction = pending ? (pending.action || pending) : null;
+
+    // Card class
+    let cardClass = 'svc-card';
+    if(pending) cardClass += ' pending';
+    else if(running) cardClass += ' running';
+    else cardClass += ' stopped';
+
+    // State display
+    let stateText, stateColor;
+    if(pendingAction === 'start'){
+      stateText = 'STARTING'; stateColor = 'warn';
+    } else if(pendingAction === 'stop'){
+      stateText = 'STOPPING'; stateColor = 'warn';
+    } else if(pendingAction === 'restart'){
+      stateText = 'RESTARTING'; stateColor = 'warn';
+    } else if(reachable){
+      stateText = 'ONLINE'; stateColor = 'ok';
+    } else if(running){
+      stateText = 'STARTING'; stateColor = 'warn';
+    } else {
+      stateText = 'STOPPED'; stateColor = 'err';
+    }
+
+    // Button disabled logic
+    const allDisabled = !!pending;
+    const startDisabled = allDisabled || running;
+    const stopDisabled = allDisabled || !running;
+    const restartDisabled = allDisabled || !running;
+
+    const logs = (s.log_tail || []);
+    let logHtml = '';
+    logs.forEach(line => {
+      let cls = 'log-line';
+      if(/error|failed|exception/i.test(line)) cls += ' log-err';
+      else if(/warning|warn/i.test(line)) cls += ' log-warn';
+      logHtml += `<div class="${cls}">${escHtml(line)}</div>`;
+    });
+
+    html += `<div class="${cardClass}" id="card-${key}">
+      <div class="svc-header">
+        <span class="svc-label">${srv.label || key.toUpperCase()}</span>
+        <span class="svc-port">:${srv.port}</span>
+      </div>
+      <div class="svc-body">
+        <div class="svc-row"><span class="svc-lbl">STATE</span><span class="svc-val ${stateColor}">${stateText}</span></div>
+        <div class="svc-row"><span class="svc-lbl">PID</span><span class="svc-val ${running?'':'dim'}">${s.pid || '—'}</span></div>
+        <div class="svc-row"><span class="svc-lbl">POLLS</span><span class="svc-val">${reachable ? s.poll_count : '—'}</span></div>
+        <div class="svc-row"><span class="svc-lbl">CLIENTS</span><span class="svc-val">${reachable ? s.clients : '—'}</span></div>
+        <div class="svc-row"><span class="svc-lbl">SCRIPT</span><span class="svc-val dim">${srv.script||''}</span></div>
+        ${s.last_error ? `<div class="svc-row"><span class="svc-lbl">ERROR</span><span class="svc-val err" title="${escAttr(s.last_error)}">${trunc(s.last_error,36)}</span></div>` : ''}
+        ${logHtml ? `<div class="svc-log" id="log-${key}">${logHtml}</div>` : '<div class="svc-log" style="color:var(--gdimmer)">NO LOG OUTPUT</div>'}
+      </div>
+      <div class="svc-controls">
+        <button class="svc-btn start" onclick="svcCmd('start','${key}')" ${startDisabled?'disabled':''}>▶ START</button>
+        <button class="svc-btn stop" onclick="svcCmd('stop','${key}')" ${stopDisabled?'disabled':''}>■ STOP</button>
+        <button class="svc-btn restart" onclick="svcCmd('restart','${key}')" ${restartDisabled?'disabled':''}>↻ RESTART</button>
+      </div>
+    </div>`;
+  });
+  grid.innerHTML = html;
+
+  // Auto-scroll log divs
+  serverKeys.forEach(key => {
+    const el = document.getElementById(`log-${key}`);
+    if(el) el.scrollTop = el.scrollHeight;
+  });
+}
+
+function svcCmd(action, key){
+  // Immediate local pending state
+  pendingLocal[key] = action;
+  renderServices();
+
+  if(ws && ws.readyState === WebSocket.OPEN){
+    ws.send(JSON.stringify({ action, key }));
+  }
+}
+
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+function escAttr(s){ return String(s||'').replace(/"/g,'&quot;'); }
+function trunc(s,n){ return s && s.length > n ? s.slice(0,n)+'…' : s||''; }
+
+/* ═══════ Import Modal ═══════ */
+function openImportModal(){
+  document.getElementById('import-overlay').classList.add('active');
+}
+function closeImportModal(){
+  document.getElementById('import-overlay').classList.remove('active');
+}
+
+// Drop zone
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+dropZone.addEventListener('click', () => fileInput.click());
+dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('dragover'); });
+dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+dropZone.addEventListener('drop', (e) => {
+  e.preventDefault();
+  dropZone.classList.remove('dragover');
+  const file = e.dataTransfer.files[0];
+  if(file) loadTopoFile(file);
+});
+fileInput.addEventListener('change', () => {
+  if(fileInput.files[0]) loadTopoFile(fileInput.files[0]);
+});
+
+function loadTopoFile(file){
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const data = JSON.parse(e.target.result);
+      importedTopology = data;
+      document.getElementById('import-file-name').textContent = `FILE: ${file.name} (${formatBytes(file.size)})`;
+      document.getElementById('import-file-name').style.display = 'block';
+      renderImportPreview(data);
+      document.getElementById('btn-do-import').disabled = false;
+      document.getElementById('import-result').style.display = 'none';
+    } catch(err) {
+      showImportResult(`Parse error: ${err.message}`, false);
+      importedTopology = null;
+      document.getElementById('btn-do-import').disabled = true;
+    }
+  };
+  reader.readAsText(file);
+}
+
+function renderImportPreview(topo){
+  const preview = document.getElementById('import-preview');
+  const entries = Object.entries(topo);
+  if(!entries.length || !entries[0][1]?.node_details){
+    preview.style.display = 'none';
+    showImportResult('Not a valid Secure Cartography topology file', false);
+    importedTopology = null;
+    document.getElementById('btn-do-import').disabled = true;
+    return;
+  }
+
+  let html = `<div style="margin-bottom:4px;color:var(--g3);font-size:7px;letter-spacing:1px">${entries.length} DEVICES FOUND</div>`;
+  entries.forEach(([name, data]) => {
+    const nd = data.node_details || {};
+    const ip = nd.ip || '—';
+    const platform = nd.platform || '—';
+    const dtype = detectType(platform);
+    html += `<div class="preview-line">
+      <span class="pv-name">${escHtml(name)}</span>
+      <span class="pv-ip" style="margin-left:8px">${escHtml(ip)}</span>
+      <span class="pv-type" style="margin-left:8px">${VENDOR_SHORT[dtype]||dtype}</span>
+    </div>`;
+  });
+  preview.innerHTML = html;
+  preview.style.display = 'block';
+}
+
+function detectType(platform){
+  const p = (platform||'').toLowerCase();
+  if(/arista|eos|dcs-|veos/.test(p)) return 'arista_eos';
+  if(/juniper|junos|mx\d|qfx|ex\d|srx|vmx/.test(p)) return 'juniper_junos';
+  if(/cisco|ios|nx-os|nexus|catalyst|asr|isr|ws-c|c9[0-9]/.test(p)) return 'cisco_ios';
+  return 'linux';
+}
+
+async function doImport(){
+  if(!importedTopology) return;
+  const btn = document.getElementById('btn-do-import');
+  btn.disabled = true;
+  btn.textContent = 'IMPORTING...';
+
+  try {
+    const resp = await fetch('/api/devices/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        topology: importedTopology,
+        username: document.getElementById('import-username').value || 'admin',
+        group: document.getElementById('import-group').value || 'IMPORTED',
+        merge: true,
+      }),
+    });
+    const result = await resp.json();
+    if(result.status === 'ok'){
+      showImportResult(`Imported ${result.added} devices (${result.skipped} duplicates skipped). Total: ${result.total_devices}`, true);
+    } else {
+      showImportResult(result.error || 'Import failed', false);
+    }
+  } catch(err) {
+    showImportResult(`Network error: ${err.message}`, false);
+  }
+
+  btn.textContent = 'IMPORT DEVICES';
+  btn.disabled = false;
+}
+
+function clearImportData(){
+  importedTopology = null;
+  document.getElementById('import-preview').style.display = 'none';
+  document.getElementById('import-preview').innerHTML = '';
+  document.getElementById('import-file-name').style.display = 'none';
+  document.getElementById('import-result').style.display = 'none';
+  document.getElementById('btn-do-import').disabled = true;
+  fileInput.value = '';
+}
+
+function showImportResult(msg, ok){
+  const el = document.getElementById('import-result');
+  el.textContent = msg;
+  el.className = 'import-result ' + (ok ? 'ok' : 'err');
+  el.style.display = 'block';
+}
+
+function formatBytes(b){
+  if(b < 1024) return b + ' B';
+  if(b < 1048576) return (b/1024).toFixed(1) + ' KB';
+  return (b/1048576).toFixed(1) + ' MB';
+}
+
+/* ═══════ WebSocket ═══════ */
+function connect(){
+  ws = new WebSocket(WS_URL);
+  ws.onopen = () => {
+    document.getElementById('footer-status').innerHTML = '● LIVE';
+    document.getElementById('footer-status').style.color = 'var(--g)';
+    document.getElementById('footer-status').style.animation = '';
+  };
+  ws.onmessage = (e) => {
+    try {
+      const msg = JSON.parse(e.data);
+      if(msg.type === 'config'){
+        config.servers = msg.servers || {};
+        config.devices = msg.devices || [];
+        config.dtype_map = msg.dtype_map || {};
+        renderDevices();
+        renderServices();
+      }
+      if(msg.type === 'status'){
+        (msg.servers||[]).forEach(s => {
+          statuses[s.key] = s;
+          // Clear local pending if server reports state resolved
+          if(pendingLocal[s.key]){
+            const pa = pendingLocal[s.key];
+            if(pa === 'start' && s.process_running) delete pendingLocal[s.key];
+            if(pa === 'stop' && !s.process_running) delete pendingLocal[s.key];
+            if(pa === 'restart' && s.process_running && s.reachable) delete pendingLocal[s.key];
+          }
+        });
+        renderServices();
+        renderDevices();
+        const d = new Date(msg.timestamp * 1000);
+        document.getElementById('footer-ts').textContent = d.toLocaleTimeString();
+      }
+    } catch(x){ console.error(x); }
+  };
+  ws.onclose = () => {
+    document.getElementById('footer-status').innerHTML = '● RECONNECTING';
+    document.getElementById('footer-status').style.color = 'var(--amber)';
+    document.getElementById('footer-status').style.animation = 'pulse 2s infinite';
+    setTimeout(connect, 3000);
+  };
+}
+
+// Close modal on Escape
+document.addEventListener('keydown', (e) => {
+  if(e.key === 'Escape') closeImportModal();
+});
+
+// Close modal on overlay click
+document.getElementById('import-overlay').addEventListener('click', (e) => {
+  if(e.target === e.currentTarget) closeImportModal();
+});
+
+document.getElementById('search').addEventListener('input', renderDevices);
+connect();
+</script>
+</body>
+</html>

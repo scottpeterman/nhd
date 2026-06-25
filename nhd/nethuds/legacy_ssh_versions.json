@@ -1,0 +1,51 @@
+{
+  "_comment": "Versions at or below these thresholds require legacy_ssh=true (disables rsa-sha2-256/512). Version comparison is semantic — only major.minor checked unless patch matters.",
+
+  "arista_eos": {
+    "legacy_below": "4.25",
+    "reason": "OpenSSH 6.6.1 bundled before EOS 4.25, lacks rsa-sha2-* support",
+    "notes": "EOS 4.25+ ships OpenSSH 7.4+"
+  },
+
+  "juniper_junos": {
+    "legacy_below": "18.1",
+    "reason": "JunOS < 18.1 uses OpenSSH < 7.2, no rsa-sha2-* pubkey auth",
+    "notes": "14.1X53 (QFX5100), 15.1 (MX), 17.x all need legacy mode"
+  },
+
+  "cisco_ios": {
+    "legacy_below": "16.9",
+    "reason": "IOS-XE < 16.9 / classic IOS 15.x SSH server lacks SHA-2 transport",
+    "notes": "Classic IOS (12.x, 15.x) always needs legacy. IOS-XE 16.9+ is fine."
+  },
+
+  "cisco_xe": {
+    "legacy_below": "16.9",
+    "reason": "Same as cisco_ios — shared SSH stack",
+    "notes": "Polaris/IOS-XE 16.9 introduced SHA-2 support"
+  },
+
+  "cisco_nxos": {
+    "legacy_below": "9.2",
+    "reason": "NX-OS < 9.2 SSH implementation lacks rsa-sha2-*",
+    "notes": "9.2(1)+ safe"
+  },
+
+  "dell_os10": {
+    "legacy_below": "10.5.0",
+    "reason": "OS10 < 10.5 based on older OpenSSH",
+    "notes": "Rare in production, most deployments are 10.5+"
+  },
+
+  "nokia_sros": {
+    "legacy_below": "19.10",
+    "reason": "SR OS < 19.10 SSH server doesn't negotiate rsa-sha2-*",
+    "notes": "19.10+ (R1) added SHA-2 support"
+  },
+
+  "linux": {
+    "legacy_below": "7.2",
+    "reason": "OpenSSH version directly — < 7.2 lacks rsa-sha2-* support",
+    "notes": "Version here is OpenSSH version, not kernel/distro. Debian 9+/Ubuntu 18.04+ ship 7.4+"
+  }
+}

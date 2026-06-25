@@ -1,0 +1,1091 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="green">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Juniper HUD</title>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.min.css">
+<script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.min.js"></script>
+<style>
+  /* GREEN theme (default) */
+  [data-theme="green"] {
+    --g: #00ff41; --g2: #00cc33; --g3: #009922; --gdim: #004d15; --gdimmer: #002a0a;
+    --red: #ff3333; --amber: #ffaa00; --cyan: #00ddff;
+    --bg: #080a08; --bg2: #0e120eee;
+    --scan: rgba(0,255,65,0.012);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+  }
+  /* AMBER theme (night mode) */
+  [data-theme="amber"] {
+    --g: #ff9500; --g2: #e07800; --g3: #a85800; --gdim: #5a3200; --gdimmer: #2e1a00;
+    --red: #ff4444; --amber: #ffcc00; --cyan: #ffcc66;
+    --bg: #0a0800; --bg2: #12100aee;
+    --scan: rgba(255,149,0,0.010);
+    --mono: 'Courier New', 'Lucida Console', monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--g); font-family: var(--mono); font-size: 10px; overflow-x: hidden; }
+  body::after {
+    content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 1000;
+    background: repeating-linear-gradient(0deg, transparent, transparent 2px, var(--scan) 2px, var(--scan) 4px);
+  }
+  @keyframes pulse { 0%,100%{opacity:.6} 50%{opacity:1} }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.15} }
+  @keyframes radarSweep { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+  .shell { padding: 6px; min-height: 100vh; }
+  .header { display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(0,153,34,.27); padding-bottom:5px; margin-bottom:6px; flex-wrap:wrap; gap:4px; }
+  .hostname { font-size:15px; letter-spacing:3px; font-weight:bold; color:var(--g); }
+  .hdim { color:var(--gdim); font-size:8px; margin-left:8px; }
+  .hsub { color:var(--g3); font-size:8px; margin-left:8px; }
+  .grid { display:grid; grid-template-columns:1.1fr 280px 1fr; gap:6px; }
+  @media (max-width: 1200px) { .grid { grid-template-columns:1fr 260px 1fr; } }
+  @media (max-width: 900px) { .grid { grid-template-columns:1fr; } }
+  .col { display:flex; flex-direction:column; gap:6px; }
+  .panel { border:1px solid var(--g3); background:var(--bg2); position:relative; }
+  .panel.alert { border-color:var(--red); }
+  .panel.warning { border-color:var(--amber); }
+  .panel-title { font-size:9px; letter-spacing:2px; text-transform:uppercase; padding:4px 8px 3px; border-bottom:1px solid rgba(0,153,34,.27); color:var(--g); background:rgba(0,153,34,.03); }
+  .panel.alert .panel-title { color:var(--red); background:rgba(255,51,51,.04); border-bottom-color:rgba(255,51,51,.15); }
+  .panel.warning .panel-title { color:var(--amber); background:rgba(255,170,0,.04); border-bottom-color:rgba(255,170,0,.15); }
+  .panel-body { padding:4px 8px 6px; }
+  .panel::before, .panel::after { content:''; position:absolute; width:10px; height:10px; pointer-events:none; }
+  .panel::before { top:-1px; left:-1px; border-top:1.5px solid var(--g3); border-left:1.5px solid var(--g3); }
+  .panel::after { top:-1px; right:-1px; border-top:1.5px solid var(--g3); border-right:1.5px solid var(--g3); }
+  .panel.alert::before, .panel.alert::after { border-color:var(--red); }
+  .panel.warning::before, .panel.warning::after { border-color:var(--amber); }
+  .lbl { color:var(--g3); font-size:8px; letter-spacing:1px; }
+  .val { font-weight:bold; }
+  .dot { display:inline-block; width:5px; height:5px; border-radius:50%; margin-right:3px; vertical-align:middle; }
+  .dot-ok { background:var(--g); box-shadow:0 0 4px var(--g); }
+  .dot-err { background:var(--red); box-shadow:0 0 4px var(--red); }
+  .dot-blink { animation: blink .8s infinite; }
+  .therm-cell { display:inline-block; width:14px; height:14px; border-radius:1px; position:relative; font-size:6px; text-align:center; line-height:14px; margin:0 1px 1px 0; cursor:default; }
+  .therm-cell:hover { outline:1px solid var(--g); z-index:1; }
+  .tbl { width:100%; border-collapse:collapse; font-size:8px; }
+  .tbl th { text-align:left; padding:2px 3px; color:var(--g3); border-bottom:1px solid var(--gdimmer); font-weight:normal; }
+  .tbl td { padding:2px 3px; }
+  .tbl .r { text-align:right; }
+  .tbl .c { text-align:center; }
+  .log-entry { display:flex; gap:4px; padding:2px 0; border-bottom:1px solid rgba(0,42,10,.2); font-size:8px; line-height:1.4; }
+  .log-ts { color:rgba(0,180,50,.75); min-width:78px; white-space:nowrap; }
+  .log-sev { min-width:32px; font-weight:bold; }
+  .log-src { color:#4dc880; font-weight:bold; margin-right:2px; }
+  .tab { cursor:pointer; font-size:8px; letter-spacing:1px; padding-bottom:1px; border-bottom:1px solid transparent; margin-right:6px; text-transform:uppercase; color:var(--g3); }
+  .tab.active { color:var(--g); border-bottom-color:var(--g); }
+  .scroll { overflow-y:auto; }
+  .scroll::-webkit-scrollbar { width:4px; }
+  .scroll::-webkit-scrollbar-track { background:var(--bg); }
+  .scroll::-webkit-scrollbar-thumb { background:var(--g3); }
+  .footer { display:flex; justify-content:space-between; align-items:center; border-top:1px solid rgba(0,153,34,.2); margin-top:6px; padding-top:4px; font-size:7px; color:var(--g3); flex-wrap:wrap; gap:4px; }
+  .conn-banner { text-align:center; padding:12px; font-size:11px; letter-spacing:2px; border:1px solid var(--amber); color:var(--amber); margin:20px; animation:pulse 2s infinite; }
+  .row { display:flex; justify-content:space-between; align-items:center; padding:1px 0; }
+  .row-b { border-bottom:1px solid rgba(0,42,10,.13); }
+  .flex-wrap { display:flex; flex-wrap:wrap; gap:1px; }
+  .alert-box { margin-top:4px; padding:3px 4px; font-size:8px; background:rgba(255,170,0,.07); border:1px solid rgba(255,170,0,.2); }
+
+  /* Theme toggle */
+  .theme-toggle {
+    cursor:pointer; font-size:9px; letter-spacing:1px; padding:3px 10px;
+    border:1px solid var(--g2); background:transparent; color:var(--g2);
+    text-transform:uppercase; font-family:inherit;
+  }
+  .theme-toggle:hover { color:var(--g); border-color:var(--g); }
+
+  /* Loading overlay */
+  .load-overlay {
+    position:fixed; inset:0; z-index:500; background:var(--bg);
+    display:flex; flex-direction:column; align-items:center; justify-content:center;
+    font-family:var(--mono); color:var(--g);
+  }
+  .load-overlay .load-title { font-size:14px; letter-spacing:4px; margin-bottom:20px; animation:pulse 2s infinite; }
+  .load-overlay .load-bar-wrap { width:320px; height:6px; border:1px solid var(--g3); background:var(--bg2); margin-bottom:12px; }
+  .load-overlay .load-bar { height:100%; background:var(--g); width:0%; transition:width .3s ease; box-shadow:0 0 6px var(--g); }
+  .load-overlay .load-cmd { font-size:9px; color:var(--g2); letter-spacing:1px; height:14px; }
+  .load-overlay .load-elapsed { font-size:8px; color:var(--g3); margin-top:6px; }
+  .load-overlay .load-steps { margin-top:14px; font-size:8px; color:var(--gdim); max-width:320px; }
+
+  /* Terminal FAB + overlay */
+  .term-fab {
+    position:fixed; bottom:20px; right:20px; z-index:900;
+    width:48px; height:48px; border-radius:50%;
+    background:var(--bg2); border:1.5px solid var(--g3);
+    cursor:pointer; display:flex; align-items:center; justify-content:center;
+  }
+  .term-fab:hover { border-color:var(--g); box-shadow:0 0 12px rgba(0,255,65,.3); }
+  .term-fab svg { width:20px; height:20px; fill:none; stroke:var(--g3); stroke-width:1.5; }
+  .term-fab:hover svg { stroke:var(--g); }
+  .term-fab.active { border-color:var(--g); }
+  .term-fab.active svg { stroke:var(--g); }
+  .term-overlay {
+    display:none; position:fixed; top:60px; left:10%; width:80%; height:calc(100vh - 140px);
+    z-index:950; background:var(--bg); border:1px solid var(--g3);
+    flex-direction:column; box-shadow:0 0 30px rgba(0,0,0,.8);
+    resize:both; overflow:hidden; min-width:400px; min-height:200px;
+  }
+  .term-overlay.open { display:flex; }
+  .term-header {
+    display:flex; justify-content:space-between; align-items:center;
+    padding:4px 10px; border-bottom:1px solid var(--g3);
+    font-size:9px; letter-spacing:2px; color:var(--g);
+    background:rgba(0,153,34,.03); cursor:move; user-select:none;
+  }
+  .term-header span { display:flex; align-items:center; gap:6px; }
+  .term-btn {
+    cursor:pointer; font-size:8px; letter-spacing:1px; padding:2px 8px;
+    border:1px solid var(--g3); background:transparent; color:var(--g3);
+    text-transform:uppercase; font-family:inherit;
+  }
+  .term-btn:hover { color:var(--g); border-color:var(--g); }
+  .term-body { flex:1; overflow:hidden; padding:4px; }
+  .term-status {
+    padding:2px 10px; font-size:7px; color:var(--g3);
+    border-top:1px solid rgba(0,153,34,.15); text-transform:uppercase; letter-spacing:1px;
+  }
+  .xterm-viewport::-webkit-scrollbar { width:6px; }
+  .xterm-viewport::-webkit-scrollbar-track { background:var(--bg); }
+  .xterm-viewport::-webkit-scrollbar-thumb { background:var(--g3); border-radius:3px; }
+</style>
+</head>
+<body>
+
+  <!-- ═══════ LOGIN MODAL ═══════ -->
+  <div id="loginOverlay" style="
+    position:fixed; inset:0; z-index:9999;
+    background:rgba(0,0,0,0.92);
+    display:none; align-items:center; justify-content:center;
+    font-family:'Courier New','Lucida Console',monospace;
+  ">
+    <div id="loginBox" style="
+      border:1px solid #00ff41; background:#080a08;
+      padding:24px 28px; min-width:380px; max-width:460px;
+      box-shadow:0 0 20px rgba(0,255,65,0.15), inset 0 0 60px rgba(0,255,65,0.02);
+    ">
+      <div style="border-bottom:1px solid #004d15; padding-bottom:8px; margin-bottom:16px;
+        display:flex; justify-content:space-between; align-items:center;">
+        <span style="color:#00ff41; font-size:11px; text-transform:uppercase; letter-spacing:2px;">⬡ CONNECT TO DEVICE</span><span id="lf-hud-label" style="color:#00ff41; font-size:9px; letter-spacing:2px; margin-left:12px; opacity:0.7;"></span>
+        <span id="loginClose" style="color:#004d15; cursor:pointer; font-size:14px;" title="Use config.yaml defaults">✕</span>
+      </div>
+      <div id="loginFields" style="display:grid; gap:10px;">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">HOST</span>
+          <input id="lf-host" type="text" placeholder="switch.example.com" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">USERNAME</span>
+            <input id="lf-user" type="text" placeholder="admin" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">PASSWORD</span>
+            <input id="lf-pass" type="password" placeholder="password" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:12px; padding:6px 8px; outline:none;">
+          </label>
+        </div>
+        <input id="lf-dtype" type="hidden">
+        <label style="display:grid; gap:2px;">
+          <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">AUTH METHOD</span>
+          <select id="lf-auth" style="
+            background:#002a0a; border:1px solid #004d15; color:#00ff41;
+            font-family:inherit; font-size:12px; padding:6px 8px; outline:none;"><option value="password">Password</option><option value="key">SSH Key</option></select>
+        </label>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <label style="display:grid; gap:2px;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">SSH PRIVATE KEY</span>
+            <input id="lf-keyfile" type="file" style="
+              background:#002a0a; border:1px solid #004d15; color:#00ff41;
+              font-family:inherit; font-size:10px; padding:4px 6px; outline:none;">
+            <span style="color:#004d15; font-size:7px;">RSA, Ed25519, or ECDSA. Read once, never stored.</span>
+          </label>
+          <label style="display:flex; align-items:end; gap:8px; padding-bottom:6px;">
+            <input id="lf-legacy" type="checkbox" style="accent-color:#00ff41;">
+            <span style="color:#009922; font-size:9px; text-transform:uppercase; letter-spacing:1px;">LEGACY SSH</span>
+          </label>
+        </div>
+      </div>
+      <div id="loginStatus" style="margin-top:12px; font-size:10px; min-height:14px; color:#004d15;"></div>
+      <div style="display:flex; gap:10px; margin-top:14px;">
+        <button id="loginBtn" onclick="LoginModal.connect()" style="
+          flex:1; background:transparent; border:1px solid #00ff41; color:#00ff41;
+          font-family:inherit; font-size:11px; padding:8px; cursor:pointer;
+          text-transform:uppercase; letter-spacing:2px;"
+        >▶ CONNECT</button>
+        <button onclick="LoginModal.dismiss()" style="
+          background:transparent; border:1px solid #004d15; color:#004d15;
+          font-family:inherit; font-size:10px; padding:8px 14px; cursor:pointer;
+          text-transform:uppercase;" title="Skip — use config.yaml defaults"
+        >SKIP</button>
+      </div>
+    </div>
+  </div>
+  <!-- ═══════ END LOGIN MODAL ═══════ -->
+
+<div class="load-overlay" id="load-overlay">
+  <div class="load-title">INITIALIZING TELEMETRY</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+  <div class="load-cmd" id="load-cmd">CONNECTING...</div>
+  <div class="load-elapsed" id="load-elapsed"></div>
+  <div class="load-steps" id="load-steps"></div>
+</div>
+<div class="shell" id="app"></div>
+
+<!-- Terminal FAB -->
+<div class="term-fab" id="term-fab" onclick="TerminalMgr.toggle()" title="SSH Terminal">
+  <svg viewBox="0 0 24 24"><path d="M4 17l6-5-6-5"/><path d="M12 19h8"/></svg>
+</div>
+<!-- Terminal Overlay -->
+<div class="term-overlay" id="term-overlay">
+  <div class="term-header">
+    <span>❯ SSH TERMINAL</span>
+    <span>
+      <button class="term-btn" onclick="TerminalMgr.reconnect()">RECONNECT</button>
+      <button class="term-btn" onclick="TerminalMgr.close()">CLOSE</button>
+    </span>
+  </div>
+  <div class="term-body" id="term-body"></div>
+  <div class="term-status" id="term-status">DISCONNECTED</div>
+</div>
+
+<script>
+const WS_BASE = `${location.protocol === 'https:' ? 'wss' : 'ws'}://${location.host}`;
+const SEV_COLOR={0:'var(--red)',1:'var(--red)',2:'var(--red)',3:'var(--red)',4:'var(--amber)',5:'var(--g2)',6:'var(--gdim)'};
+const SEV_LABEL={3:'ERR',4:'WARN',5:'NOTIF',6:'INFO'};
+const JUNOS_SRC_COLOR={rpd:'#40e0d0',bgp:'#40e0d0',ospf:'#40e0d0',chassisd:'#e08040',alarmd:'#e08040',craftd:'#e08040',pfed:'#c080ff',dfwd:'#c080ff',ppmd:'#c080ff',kmd:'#ff8080',sshd:'#ff8080',mgd:'#66bb6a',snmpd:'#66bb6a',mib2d:'#66bb6a',dcd:'#80b0ff',cosd:'#80b0ff',l2ald:'#80b0ff',eswd:'#80b0ff',lacpd:'#80b0ff',kernel:'#e0e040',eventd:'#aaa',last:'#aaa',ui:'#66bb6a'};
+function srcColor(src){const k=(src||'').toLowerCase().replace(/[\[\d\]]/g,'');return JUNOS_SRC_COLOR[k]||'#4dc880';}
+let ws=null,currentData=null,thermalTab='heatmap',logFilter='all',_completedCmds=[];
+let _sessionId = sessionStorage.getItem('hud_session_id') || null;
+
+function _setSession(sid) {
+  _sessionId = sid;
+  if (sid) sessionStorage.setItem('hud_session_id', sid);
+  else sessionStorage.removeItem('hud_session_id');
+}
+
+/* Loading overlay helpers */
+let _progressTimer = null;
+let _progressT0 = null;
+
+function _updateProgress(p){
+  const overlay=document.getElementById('load-overlay');
+  if(!overlay)return;
+  overlay.style.display='flex';
+
+  // Start client-side elapsed timer on first progress event
+  if(!_progressTimer){
+    _progressT0 = Date.now() - (p.elapsed * 1000);
+    _progressTimer = setInterval(()=>{
+      const el=document.getElementById('load-elapsed');
+      if(el) el.textContent = ((Date.now()-_progressT0)/1000).toFixed(1)+'s';
+    }, 500);
+  }
+
+  if(p.phase === 'start'){
+    // Command starting — show what's being collected
+    const cmd=document.getElementById('load-cmd');
+    if(cmd) cmd.textContent='COLLECTING '+p.command.toUpperCase().replace(/_/g,' ')+'...';
+  } else {
+    // Command completed
+    const pct=Math.round((p.index/p.total)*100);
+    const bar=document.getElementById('load-bar');
+    if(bar) bar.style.width=pct+'%';
+    const cmd=document.getElementById('load-cmd');
+    if(cmd) cmd.textContent=p.command.toUpperCase().replace(/_/g,' ')+' \u2713';
+    _completedCmds.push(p.command);
+    const steps=document.getElementById('load-steps');
+    if(steps) steps.textContent=_completedCmds.map(c=>c.toUpperCase().replace(/_/g,' ')).join(' \u00b7 ');
+  }
+}
+function _dismissOverlay(){
+  const o=document.getElementById('load-overlay');
+  if(o)o.remove();
+  _completedCmds=[];
+  if(_progressTimer){clearInterval(_progressTimer);_progressTimer=null;}
+  _progressT0=null;
+}
+
+/* Theme module */
+const Theme={
+  current(){return document.documentElement.getAttribute('data-theme')||'green'},
+  toggle(){const n=this.current()==='green'?'amber':'green';document.documentElement.setAttribute('data-theme',n);localStorage.setItem('hud-theme',n);if(currentData)render(currentData)},
+  init(){const s=localStorage.getItem('hud-theme');if(s)document.documentElement.setAttribute('data-theme',s)},
+  label(){return this.current()==='green'?'AMBER':'GREEN'}
+};
+Theme.init();
+
+/* Terminal drag */
+(function(){const h=document.querySelector('.term-header'),o=document.getElementById('term-overlay');let d=false,ox,oy;h.addEventListener('mousedown',e=>{if(e.target.closest('.term-btn'))return;d=true;ox=e.clientX-o.offsetLeft;oy=e.clientY-o.offsetTop;e.preventDefault()});document.addEventListener('mousemove',e=>{if(!d)return;o.style.left=(e.clientX-ox)+'px';o.style.top=(e.clientY-oy)+'px';o.style.right='auto'});document.addEventListener('mouseup',()=>{d=false})})();
+
+function connect(){
+  if(!_sessionId) return;
+  ws=new WebSocket(`${WS_BASE}/ws?session=${_sessionId}`);
+  ws.onopen=()=>{ console.log('WS connected, session:', _sessionId.slice(0,8)); };
+  ws.onmessage=(e)=>{
+    try{
+      const msg=JSON.parse(e.data);
+      if(msg.error){
+        console.warn('WS session error:', msg.error);
+        _setSession(null);
+        return;
+      }
+      if(msg._progress){
+        _updateProgress(msg._progress);
+      }else{
+        _dismissOverlay();
+        currentData=msg;
+        render(currentData);
+      }
+    }catch(x){console.error(x)}
+  };
+  ws.onclose=()=>{if(_sessionId) setTimeout(connect,3000);};
+  ws.onerror=(e)=>console.error('WS error',e);
+}
+
+// ===== Juniper JSON helpers =====
+// Juniper wraps every value as [{"data":"value","attributes":{...}}]
+function jval(arr, def){
+  if(arr==null) return def===undefined?null:def;
+  if(Array.isArray(arr)){
+    if(arr.length===0) return def===undefined?null:def;
+    const f=arr[0];
+    if(f && typeof f==='object' && 'data' in f) return f.data;
+    return f;
+  }
+  if(typeof arr==='object' && 'data' in arr) return arr.data;
+  return arr;
+}
+function jnum(arr, def){const v=jval(arr,def); return v==null?def:parseFloat(v)||def||0;}
+function jattr(arr, attr, def){
+  if(Array.isArray(arr)&&arr.length>0){const a=arr[0];if(a&&a.attributes)return a.attributes[attr]||def}
+  return def;
+}
+function safe(o,p,d){const a=p.split('.');let c=o;for(const k of a){if(c==null)return d;c=c[k]}return c??d}
+function dot(ok,blink){return`<span class="dot ${ok?'dot-ok':'dot-err'}${blink?' dot-blink':''}"></span>`}
+function tempColor(t,warn,crit){return t>=crit?'var(--red)':t>=warn?'var(--amber)':'var(--g)'}
+
+function gaugeRing(pct,size,color,label){
+  const r=size/2-3,c=Math.PI*2*r,off=c-(pct/100)*c;
+  return`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}"><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="var(--gdimmer)" stroke-width="3"/><circle cx="${size/2}" cy="${size/2}" r="${r}" fill="none" stroke="${color}" stroke-width="3" stroke-dasharray="${c}" stroke-dashoffset="${off}" transform="rotate(-90 ${size/2} ${size/2})" stroke-linecap="round"/><text x="${size/2}" y="${size/2-1}" fill="${color}" font-size="8" font-family="var(--mono)" text-anchor="middle" font-weight="bold">${pct.toFixed(0)}%</text><text x="${size/2}" y="${size/2+7}" fill="var(--g3)" font-size="5" font-family="var(--mono)" text-anchor="middle">${label}</text></svg>`
+}
+
+// ===== Extract structured data from Juniper JSON =====
+
+function extractRoutingEngines(d){
+  const rei=safe(d,'routing_engine.route-engine-information',[]);
+  if(!rei.length) return [];
+  const engines=safe(rei[0],'route-engine',[]);
+  return engines.map(re=>({
+    slot: jval(re.slot,'0'),
+    status: jval(re.status,'---'),
+    mastership: jval(re['mastership-state'],'---'),
+    temp: jnum(re.temperature,0),
+    cpuTemp: jnum(re['cpu-temperature'],0),
+    memTotal: jval(re['memory-dram-size'],'---'),
+    memBuf: jnum(re['memory-buffer-utilization'],0),
+    cpuUser: jnum(re['cpu-user'],0),
+    cpuSystem: jnum(re['cpu-system'],0),
+    cpuIdle: jnum(re['cpu-idle'],100),
+    cpuBg: jnum(re['cpu-background'],0),
+    cpuInterrupt: jnum(re['cpu-interrupt'],0),
+    uptime: jval(re['up-time'],'---'),
+    model: jval(re['model'],'---'),
+    loadAvg1: jval(re['load-average-one'],'---'),
+    loadAvg5: jval(re['load-average-five'],'---'),
+    loadAvg15: jval(re['load-average-fifteen'],'---'),
+    lastReboot: jval(re['last-reboot-reason'],'---'),
+  }));
+}
+
+function extractEnvironment(d){
+  const ei=safe(d,'environment.environment-information',[]);
+  if(!ei.length) return {sensors:[],fans:[],power:[]};
+  const items=safe(ei[0],'environment-item',[]);
+  const sensors=[],fans=[],power=[];
+  for(const item of items){
+    const name=jval(item.name,'');
+    const cls=jval(item.class,'');
+    const status=jval(item.status,'');
+    const tempC=parseFloat(jattr(item.temperature,'junos:celsius',null));
+    if(cls==='Temp'||(!isNaN(tempC)&&name)){
+      sensors.push({name,status,temp:isNaN(tempC)?0:tempC,class:cls});
+    } else if(cls==='Fans'||/fan/i.test(name)){
+      fans.push({name,status,comment:jval(item.comment,'')});
+    } else if(cls==='Power'||/power|pem/i.test(name)){
+      power.push({name,status,comment:jval(item.comment,'')});
+    }
+  }
+  return {sensors,fans,power};
+}
+
+function extractBgp(d){
+  const bi=safe(d,'bgp.bgp-information',[]);
+  if(!bi.length) return {peers:[],ribs:[],peerCount:0,downCount:0,groupCount:0};
+  const info=bi[0];
+  const peers=(info['bgp-peer']||[]).map(p=>({
+    address: jval(p['peer-address'],''),
+    as: jval(p['peer-as'],''),
+    state: jval(p['peer-state'],''),
+    elapsed: jval(p['elapsed-time'],''),
+    description: jval(p['description'],''),
+    rib: (p['bgp-rib']||[]).map(r=>({
+      name: jval(r.name,''),
+      active: jnum(r['active-prefix-count'],0),
+      received: jnum(r['received-prefix-count'],0),
+      accepted: jnum(r['accepted-prefix-count'],0),
+      suppressed: jnum(r['suppressed-prefix-count'],0),
+    })),
+    inputMessages: jnum(p['input-messages'],0),
+    outputMessages: jnum(p['output-messages'],0),
+    flaps: jnum(p['flap-count'],0),
+  }));
+  const ribs=(info['bgp-rib']||[]).map(r=>({
+    name: jval(r.name,''),
+    totalPfx: jnum(r['total-prefix-count'],0),
+    received: jnum(r['received-prefix-count'],0),
+    accepted: jnum(r['accepted-prefix-count'],0),
+    active: jnum(r['active-prefix-count'],0),
+    totalExt: jnum(r['total-external-prefix-count'],0),
+    activeExt: jnum(r['active-external-prefix-count'],0),
+    totalInt: jnum(r['total-internal-prefix-count'],0),
+    activeInt: jnum(r['active-internal-prefix-count'],0),
+  }));
+  return {
+    peers,
+    ribs,
+    peerCount: jnum(info['peer-count'],0),
+    downCount: jnum(info['down-peer-count'],0),
+    groupCount: jnum(info['group-count'],0),
+  };
+}
+
+function extractOspf(d){
+  const oi=safe(d,'ospf.ospf-neighbor-information',[]);
+  if(!oi.length) return [];
+  return (oi[0]['ospf-neighbor']||[]).map(n=>({
+    address: jval(n['neighbor-address'],''),
+    id: jval(n['neighbor-id'],''),
+    state: jval(n['ospf-neighbor-state'],''),
+    interface: jval(n['interface-name'],''),
+    priority: jnum(n['neighbor-priority'],0),
+    activity: jval(n['activity-timer'],''),
+    area: jval(n['ospf-area'],'0.0.0.0'),
+  }));
+}
+
+function extractLldp(d){
+  const li=safe(d,'lldp.lldp-neighbors-information',[]);
+  if(!li.length) return [];
+  return (li[0]['lldp-neighbor-information']||[]).map(n=>({
+    localPort: jval(n['lldp-local-port-id'],''),
+    remoteSystem: jval(n['lldp-remote-system-name'],''),
+    remotePort: jval(n['lldp-remote-port-id'],''),
+    remotePortDesc: jval(n['lldp-remote-port-description'],''),
+  }));
+}
+
+function extractRoutes(d){
+  const ri=safe(d,'routes.route-summary-information',[]);
+  if(!ri.length) return {tables:[]};
+  const tables=(ri[0]['route-table']||[]).map(t=>{
+    const protos=(t['protocols']||[]).map(p=>({
+      name: jval(p['protocol-name'],''),
+      count: jnum(p['protocol-route-count'],0),
+      active: jnum(p['active-route-count'],0),
+    }));
+    return {
+      name: jval(t['table-name'],''),
+      destinations: jnum(t['destination-count'],0),
+      total: jnum(t['total-route-count'],0),
+      active: jnum(t['active-route-count'],0),
+      holddown: jnum(t['holddown-route-count'],0),
+      hidden: jnum(t['hidden-route-count'],0),
+      protocols: protos,
+    };
+  });
+  return {tables};
+}
+
+function extractInterfaces(d){
+  const ii=safe(d,'interfaces.interface-information',[]);
+  if(!ii.length) return [];
+  const phys=safe(ii[0],'physical-interface',[]);
+  return phys.map(p=>{
+    const logicals=(p['logical-interface']||[]).map(l=>({
+      name: jval(l.name,''),
+      addresses: (l['address-family']||[]).map(af=>({
+        family: jval(af['address-family-name'],''),
+        addresses: (af['interface-address']||[]).map(a=>jval(a['ifa-local'],'')),
+      })),
+    }));
+    return {
+      name: jval(p.name,''),
+      adminStatus: jval(p['admin-status'],''),
+      operStatus: jval(p['oper-status'],''),
+      speed: jval(p.speed,''),
+      description: jval(p.description,''),
+      mtu: jval(p.mtu,''),
+      logicals,
+    };
+  });
+}
+
+function extractOptics(d){
+  const oi=safe(d,'optics.interface-information',[]);
+  if(!oi.length) return [];
+  const phys=safe(oi[0],'physical-interface',[]);
+  return phys.map(p=>{
+    const diag=safe(p,'optics-diagnostics',[{}])[0]||{};
+    return {
+      name: jval(p.name,''),
+      moduleTemp: parseFloat(jattr(diag['module-temperature'],'junos:celsius',0)),
+      moduleVoltage: parseFloat(jval(diag['module-voltage'],0)),
+      tempHighAlarm: jval(diag['module-temperature-high-alarm'],'off'),
+      tempHighWarn: jval(diag['module-temperature-high-warn'],'off'),
+      voltHighAlarm: jval(diag['module-voltage-high-alarm'],'off'),
+    };
+  }).filter(o=>o.name);
+}
+
+function extractAlarms(d){
+  const ai=safe(d,'alarms.alarm-information',[]);
+  if(!ai.length) return [];
+  const details=safe(ai[0],'alarm-detail',[]);
+  return details.map(a=>({
+    class: jval(a['alarm-class'],''),
+    description: jval(a['alarm-description'],''),
+    time: jval(a['alarm-time'],''),
+    type: jval(a['alarm-type'],''),
+  }));
+}
+
+function extractVersion(d){
+  const si=safe(d,'version.software-information',[]);
+  if(!si.length) return {hostname:'---',model:'---',version:'---'};
+  const info=si[0];
+  return {
+    hostname: jval(info['host-name'],'---'),
+    model: jval(info['product-model'],'---'),
+    version: jval(info['junos-version'],'---'),
+    packageInfo: (info['package-information']||[]).map(p=>({
+      name: jval(p.name,''),
+      comment: jval(p.comment,''),
+    })),
+  };
+}
+
+function extractHardware(d){
+  const ci=safe(d,'hardware.chassis-inventory',[]);
+  if(!ci.length) return {chassis:null};
+  const chassis=safe(ci[0],'chassis',[{}])[0]||{};
+  return {
+    serialNumber: jval(chassis['serial-number'],'---'),
+    description: jval(chassis.description,'---'),
+    modules: (chassis['chassis-module']||[]).map(m=>({
+      name: jval(m.name,''),
+      model: jval(m['model-number'],''),
+      serial: jval(m['serial-number'],''),
+      description: jval(m.description,''),
+    })),
+  };
+}
+
+// ===== Radar topology visualization =====
+function renderRadar(nei,size){
+  if(!nei||!nei.length)return'<div style="text-align:center;color:var(--g3);padding:20px">NO LLDP DATA</div>';
+  const cx=size/2,cy=size/2,r=size/2-28;
+  // Classify neighbors
+  const spines=nei.filter(n=>/spine|agg|core/i.test(n.remoteSystem));
+  const leafs=nei.filter(n=>/tor|leaf|srv|rack/i.test(n.remoteSystem));
+  const edges=nei.filter(n=>/edge|border|peer|gw/i.test(n.remoteSystem));
+  const others=nei.filter(n=>!spines.includes(n)&&!leafs.includes(n)&&!edges.includes(n));
+
+  let s=`<svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}">`;
+  s+=`<defs><radialGradient id="rg"><stop offset="0%" stop-color="var(--g)" stop-opacity="0.05"/><stop offset="100%" stop-color="var(--g)" stop-opacity="0"/></radialGradient></defs>`;
+  s+=`<circle cx="${cx}" cy="${cy}" r="${r}" fill="url(#rg)"/>`;
+  for(const sc of[.4,.7,1])s+=`<circle cx="${cx}" cy="${cy}" r="${r*sc}" fill="none" stroke="var(--gdimmer)" stroke-width="0.5" stroke-dasharray="2,3"/>`;
+  s+=`<line x1="${cx-r}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="var(--gdimmer)" stroke-width="0.3"/>`;
+  s+=`<line x1="${cx}" y1="${cy-r}" x2="${cx}" y2="${cy+r}" stroke="var(--gdimmer)" stroke-width="0.3"/>`;
+  s+=`<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="rgba(0,255,65,0.13)" stroke-width="12" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+  s+=`<line x1="${cx}" y1="${cy}" x2="${cx+r}" y2="${cy}" stroke="rgba(0,255,65,0.27)" stroke-width="1" style="transform-origin:${cx}px ${cy}px;animation:radarSweep 6s linear infinite"/>`;
+
+  // Draw spines at top
+  spines.forEach((n,i)=>{const a=-Math.PI/2+(i/(Math.max(spines.length,1)))*Math.PI*.6-Math.PI*.3,px=cx+Math.cos(a)*r*.45,py=cy+Math.sin(a)*r*.45;const nm=n.remoteSystem.split('.')[0];s+=`<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="rgba(0,221,255,.27)" stroke-width="1.5"/><rect x="${px-18}" y="${py-5}" width="36" height="10" fill="var(--bg)" stroke="var(--cyan)" stroke-width="1" rx="1"/><text x="${px}" y="${py+2.5}" fill="var(--cyan)" font-size="5" font-family="var(--mono)" text-anchor="middle" font-weight="bold">${nm}</text>`});
+
+  // Self in center
+  s+=`<rect x="${cx-22}" y="${cy-9}" width="44" height="18" fill="var(--bg)" stroke="var(--g)" stroke-width="1.5" rx="2"/><text x="${cx}" y="${cy+3}" fill="var(--g)" font-size="6" font-family="var(--mono)" text-anchor="middle" font-weight="bold">EDGE5</text>`;
+
+  // Leafs around
+  leafs.forEach((n,i)=>{const a=(i/Math.max(leafs.length,1))*Math.PI*2-Math.PI/2,px=cx+Math.cos(a)*r*.78,py=cy+Math.sin(a)*r*.78;const nm=n.remoteSystem.split('.')[0];s+=`<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="rgba(0,255,65,.13)" stroke-width=".8"/><circle cx="${px}" cy="${py}" r="3.5" fill="var(--bg)" stroke="var(--g2)" stroke-width="1"/><text x="${px}" y="${py-6}" fill="var(--g3)" font-size="5" font-family="var(--mono)" text-anchor="middle">${nm}</text>`});
+
+  // Edges at bottom
+  edges.forEach((n,i)=>{const a=Math.PI/2+(i/(Math.max(edges.length,1)))*Math.PI*.6-Math.PI*.3,px=cx+Math.cos(a)*r*.55,py=cy+Math.sin(a)*r*.55;const nm=n.remoteSystem.split('.')[0];s+=`<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="rgba(0,221,255,.2)" stroke-width="1"/><rect x="${px-16}" y="${py-5}" width="32" height="10" fill="var(--bg)" stroke="var(--cyan)" stroke-width=".8" rx="1"/><text x="${px}" y="${py+2.5}" fill="var(--cyan)" font-size="4.5" font-family="var(--mono)" text-anchor="middle">${nm}</text>`});
+
+  // Others scattered
+  others.forEach((n,i)=>{const a=(i/Math.max(others.length,1))*Math.PI*2,px=cx+Math.cos(a)*r*.7,py=cy+Math.sin(a)*r*.7;const nm=n.remoteSystem.split('.')[0].substring(0,12);s+=`<line x1="${cx}" y1="${cy}" x2="${px}" y2="${py}" stroke="rgba(0,153,34,.2)" stroke-width=".6"/><circle cx="${px}" cy="${py}" r="3" fill="var(--bg)" stroke="var(--g3)" stroke-width="1"/><text x="${px}" y="${py-6}" fill="var(--g3)" font-size="4.5" font-family="var(--mono)" text-anchor="middle">${nm}</text>`});
+
+  const total=nei.length;
+  s+=`<text x="${cx}" y="14" fill="var(--g3)" font-size="6" font-family="var(--mono)" text-anchor="middle" letter-spacing="1">UPSTREAM</text>`;
+  s+=`<text x="${cx}" y="${size-6}" fill="rgba(0,221,255,.53)" font-size="6" font-family="var(--mono)" text-anchor="middle" letter-spacing="1">DOWNSTREAM</text></svg>`;
+  return s;
+}
+
+// ===== Thermal heatmap grouping =====
+const SENSOR_GROUPS=[
+  {label:'CB',match:n=>/^CB /i.test(n)},
+  {label:'FPC 0',match:n=>/^FPC 0 /i.test(n)},
+  {label:'FPC 1',match:n=>/^FPC 1 /i.test(n)},
+  {label:'FPC 2',match:n=>/^FPC 2 /i.test(n)},
+  {label:'PEM',match:n=>/pem|power/i.test(n)},
+  {label:'FAN',match:n=>/fan/i.test(n)},
+  {label:'OTHER',match:()=>true},
+];
+
+function groupSensors(ss){
+  if(!ss||!ss.length) return [];
+  const used=new Set(),groups=[];
+  for(const g of SENSOR_GROUPS){
+    const items=ss.filter((s,i)=>!used.has(i)&&g.match(s.name));
+    items.forEach(s=>used.add(ss.indexOf(s)));
+    if(items.length) groups.push({label:g.label,sensors:items});
+  }
+  return groups;
+}
+
+function tempCellBg(t){
+  if(t>=70) return 'rgba(255,51,51,0.35)';
+  if(t>=55) return 'rgba(255,170,0,0.25)';
+  if(t>=40) return `rgba(0,255,65,${(t/100).toFixed(2)})`;
+  return `rgba(0,255,65,${(t/150).toFixed(2)})`;
+}
+
+// ===== Main render =====
+function render(d){
+  if(!d) return;
+  const meta=d.meta||{};
+  const ver=extractVersion(d);
+  const hw=extractHardware(d);
+  const engines=extractRoutingEngines(d);
+  const env=extractEnvironment(d);
+  const bgp=extractBgp(d);
+  const ospf=extractOspf(d);
+  const lldp=extractLldp(d);
+  const routes=extractRoutes(d);
+  const intfs=extractInterfaces(d);
+  const optics=extractOptics(d);
+  const alarms=extractAlarms(d);
+  const logs=d.logging||[];
+
+  const re0=engines[0]||{};
+  const hostname=ver.hostname||meta.hostname||_connectHost||'---';
+  const cpuUsed=100-re0.cpuIdle;
+  const memPct=re0.memBuf||0;
+
+  const allBgpUp=bgp.downCount===0&&bgp.peerCount>0;
+  const hasAlarms=alarms.length>0;
+  const hotSensors=env.sensors.filter(s=>s.temp>=75);
+  const hasAlert=hotSensors.length>0||hasAlarms;
+
+  const activeIntf=intfs.filter(i=>i.operStatus==='up'&&!/^(lo|em|bme|irb|jsv|pip|gre|ipip|lsi|tap|mt-|ltc|demux|cbp|dsc|me0)/.test(i.name));
+  const allIntf=intfs.filter(i=>!/^(lo|em|bme|irb|jsv|pip|gre|ipip|lsi|tap|mt-|ltc|demux|cbp|dsc|\.local\.)/.test(i.name));
+  const downIntf=allIntf.filter(i=>i.operStatus==='down');
+
+  let filteredLogs=logs;
+  if(logFilter==='warn') filteredLogs=logs.filter(l=>l.severity<=4);
+  else if(logFilter==='config') filteredLogs=logs.filter(l=>/commit|config/i.test(l.message));
+
+  const stale=meta.stale,pollErr=meta.error;
+  const overallStatus=pollErr?'ERROR':hasAlarms?'ALARM':hasAlert?'THERMAL WARNING':'NOMINAL';
+  const statusColor=pollErr?'var(--red)':hasAlert?'var(--amber)':'var(--g)';
+
+  // Route table summary
+  const inet0=routes.tables.find(t=>t.name==='inet.0')||{};
+  const inet6=routes.tables.find(t=>t.name==='inet6.0')||{};
+
+  let h='';
+
+  // HEADER
+  h+=`<div class="header"><div><span class="hostname">${hostname.toUpperCase()}</span><span class="hsub">${ver.model}</span><span class="hdim">S/N:${hw.serialNumber}</span><span class="hdim">JUNOS ${ver.version}</span></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap"><div><span class="lbl">UPTIME </span><span class="val" style="font-size:9px">${re0.uptime||'---'}</span></div><div><span class="lbl">RE0 </span><span style="font-size:9px;color:var(--g3)">${re0.mastership||'---'}</span></div><div>${pollErr?dot(false,true):hasAlert?dot(false,true):dot(true,false)}<span class="val" style="font-size:9px;color:${statusColor}">${overallStatus}</span>${stale?'<span style="color:var(--amber);font-size:7px;margin-left:4px">[STALE]</span>':''}</div><button class="theme-toggle" onclick="Theme.toggle()">◑ ${Theme.label()}</button></div></div>`;
+
+  h+='<div class="grid">';
+
+  // ===== LEFT COLUMN =====
+  h+='<div class="col">';
+
+  // Compute (Routing Engines)
+  h+=`<div class="panel"><div class="panel-title">ROUTING ENGINES</div><div class="panel-body">`;
+  for(const re of engines){
+    const cpu=100-re.cpuIdle;
+    h+=`<div style="margin-bottom:6px;${engines.length>1?'border-bottom:1px solid var(--gdimmer);padding-bottom:4px':''}">`;
+    h+=`<div style="display:flex;align-items:flex-start;gap:8px"><div style="display:flex;gap:6px;flex-shrink:0">${gaugeRing(cpu,50,cpu>80?'var(--red)':cpu>60?'var(--amber)':'var(--g)','CPU')}${gaugeRing(re.memBuf,50,re.memBuf>85?'var(--red)':re.memBuf>70?'var(--amber)':'var(--g)','MEM')}</div>`;
+    h+=`<div style="flex:1;font-size:7px;color:var(--g3)"><div>${dot(re.status==='OK',false)}<b>RE${re.slot}</b> ${re.mastership} | ${re.status}</div><div>usr:${re.cpuUser} sys:${re.cpuSystem} irq:${re.cpuInterrupt} bg:${re.cpuBg}</div><div>RAM: ${re.memTotal} | Buf: ${re.memBuf}%</div><div>Temp: ${re.temp}C | CPU: ${re.cpuTemp}C</div><div style="margin-top:2px">Load: ${re.loadAvg1} / ${re.loadAvg5} / ${re.loadAvg15}</div></div></div></div>`;
+  }
+  h+='</div></div>';
+
+  // Thermal Matrix
+  const thermalCls=hasAlert?'panel warning':'panel';
+  h+=`<div class="${thermalCls}"><div class="panel-title">${hasAlert?'<span style="animation:blink 1.5s infinite;margin-right:6px">&#x26A0;</span>':''}THERMAL MATRIX</div><div class="panel-body"><div style="margin-bottom:4px"><span class="tab ${thermalTab==='heatmap'?'active':''}" onclick="thermalTab='heatmap';render(currentData)">HEATMAP</span><span class="tab ${thermalTab==='sensors'?'active':''}" onclick="thermalTab='sensors';render(currentData)">SENSORS</span></div>`;
+
+  if(thermalTab==='heatmap'){
+    for(const grp of groupSensors(env.sensors)){
+      const mx=Math.max(...grp.sensors.map(s=>s.temp));
+      h+=`<div style="display:flex;align-items:center;gap:4px;margin-bottom:3px"><span class="lbl" style="min-width:44px">${grp.label}</span><div class="flex-wrap">`;
+      for(const s of grp.sensors){
+        const bg=tempCellBg(s.temp);
+        const col=s.temp>=70?'#fff':s.temp>=55?'var(--amber)':'var(--g)';
+        const anim=s.temp>=75?';animation:blink 2s infinite':'';
+        h+=`<div class="therm-cell" title="${s.name}: ${s.temp}C [${s.status}]" style="background:${bg};border:1px solid ${s.temp>=70?'var(--red)':s.temp>=55?'var(--amber)':'rgba(0,255,65,.27)'};color:${col}${anim}">${Math.round(s.temp)}</div>`;
+      }
+      h+=`</div><span style="font-size:8px;color:${mx>=70?'var(--red)':mx>=55?'var(--amber)':'var(--g3)'};min-width:28px;text-align:right">${mx.toFixed(0)}C</span></div>`;
+    }
+  } else {
+    h+='<div class="scroll" style="max-height:180px">';
+    for(const s of env.sensors){
+      const col=s.temp>=75?'var(--red)':s.temp>=55?'var(--amber)':'var(--g)';
+      h+=`<div style="display:flex;align-items:center;gap:4px;padding:1px 0;border-bottom:1px solid rgba(0,42,10,.08)"><span class="lbl" style="min-width:140px;font-size:7px">${s.name}</span><span style="font-size:8px;color:${col};min-width:32px;font-weight:${s.temp>=55?'bold':'normal'}">${s.temp.toFixed(1)}C</span><span style="font-size:7px;color:var(--gdim)">[${s.status}]</span></div>`;
+    }
+    h+='</div>';
+  }
+  if(hotSensors.length>0){
+    h+='<div class="alert-box"><span style="color:var(--amber);animation:blink 1.5s infinite">&#x26A0;</span><span style="color:var(--amber);margin-left:4px">'+hotSensors.length+' sensor(s) above 75C:</span>';
+    for(const s of hotSensors) h+=`<span style="color:var(--amber);font-weight:bold;margin-left:4px">${s.name} (${s.temp}C)</span>`;
+    h+='</div>';
+  }
+  h+='</div></div>';
+
+  // Optics Inventory
+  const opticsWithTemp=optics.filter(o=>o.moduleTemp>0);
+  h+=`<div class="panel"><div class="panel-title">OPTICS DIAGNOSTICS (${opticsWithTemp.length} MODULES)</div><div class="panel-body">`;
+  if(opticsWithTemp.length){
+    h+='<div class="scroll" style="max-height:120px"><table class="tbl"><thead><tr><th>PORT</th><th class="r">TEMP</th><th class="r">VOLTAGE</th><th class="c">ALARMS</th></tr></thead><tbody>';
+    for(const o of opticsWithTemp){
+      const tCol=o.moduleTemp>=65?'var(--red)':o.moduleTemp>=55?'var(--amber)':'var(--g2)';
+      const alm=(o.tempHighAlarm!=='off'||o.tempHighWarn!=='off'||o.voltHighAlarm!=='off');
+      h+=`<tr><td style="color:var(--g)">${o.name}</td><td class="r" style="color:${tCol}">${o.moduleTemp.toFixed(1)}C</td><td class="r" style="color:var(--g3)">${o.moduleVoltage.toFixed(4)}V</td><td class="c">${alm?'<span style="color:var(--red)">ALARM</span>':'<span style="color:var(--gdim)">OK</span>'}</td></tr>`;
+    }
+    h+='</tbody></table></div>';
+  } else { h+='<div style="color:var(--g3)">NO OPTICS DATA</div>'; }
+  h+='</div></div>';
+
+  // System Alarms
+  if(alarms.length){
+    h+=`<div class="panel alert"><div class="panel-title">SYSTEM ALARMS (${alarms.length})</div><div class="panel-body">`;
+    for(const a of alarms) h+=`<div style="padding:2px 0;border-bottom:1px solid rgba(255,51,51,.1)"><span style="color:${a.class==='Major'?'var(--red)':'var(--amber)'}"><b>${a.class}</b></span> <span style="font-size:7px;color:var(--g3)">${a.time}</span><div style="font-size:8px;color:var(--amber)">${a.description}</div></div>`;
+    h+='</div></div>';
+  }
+
+  h+='</div>'; // left col
+
+  // ===== CENTER COLUMN =====
+  h+='<div class="col" style="align-items:center">';
+
+  // LLDP Topology
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">LLDP TOPOLOGY</div><div class="panel-body"><div style="text-align:center">${renderRadar(lldp,260)}</div><div style="text-align:center;font-size:7px;color:var(--g3);margin-top:2px">${lldp.length} NEIGHBORS</div></div></div>`;
+
+  // RIB Summary
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">ROUTING TABLES</div><div class="panel-body">`;
+  for(const t of routes.tables.slice(0,6)){
+    h+=`<div style="margin-bottom:4px;padding-bottom:3px;border-bottom:1px solid var(--gdimmer)"><div class="row"><span class="val" style="font-size:9px;color:var(--g)">${t.name}</span><span style="font-size:9px"><b>${t.active.toLocaleString()}</b><span style="color:var(--g3)"> / ${t.total.toLocaleString()}</span></span></div><div style="font-size:7px;color:var(--g3)">dest:${t.destinations} | holddown:${t.holddown} | hidden:${t.hidden}</div>`;
+    if(t.protocols.length){
+      h+='<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px">';
+      for(const p of t.protocols) h+=`<span style="font-size:6px;color:var(--g3)">${p.name}:<span style="color:var(--g2)">${p.active}</span>/${p.count}</span>`;
+      h+='</div>';
+    }
+    h+='</div>';
+  }
+  h+='</div></div>';
+
+  // OSPF Adjacencies
+  h+=`<div class="panel" style="width:100%"><div class="panel-title">OSPF ADJACENCIES (${ospf.length})</div><div class="panel-body"><div class="scroll" style="max-height:200px">`;
+  for(const o of ospf){
+    const up=o.state.toLowerCase()==='full';
+    h+=`<div style="padding:2px 0;border-bottom:1px solid rgba(0,42,10,.08)"><div class="row">${dot(up,!up)}<span class="val" style="font-size:9px">${o.id}</span><span style="font-size:8px;color:${up?'var(--g3)':'var(--red)'}">${o.state.toUpperCase()}</span></div><div style="font-size:7px;color:var(--g3);margin-left:8px;margin-top:1px">${o.interface} | Area ${o.area} | Addr:${o.address} | Pri:${o.priority}</div></div>`;
+  }
+  if(!ospf.length) h+='<div style="color:var(--g3)">NO OSPF NEIGHBORS</div>';
+  h+='</div></div></div>';
+
+  h+='</div>'; // center col
+
+  // ===== RIGHT COLUMN =====
+  h+='<div class="col">';
+
+  // BGP Peering Table
+  h+=`<div class="${allBgpUp?'panel':'panel alert'}"><div class="panel-title">BGP PEERING TABLE (${bgp.peerCount} PEERS | ${bgp.downCount} DOWN)</div><div class="panel-body">`;
+  // RIB summary at top
+  for(const r of bgp.ribs){
+    h+=`<div style="margin-bottom:3px;font-size:7px;color:var(--g3)"><b style="color:var(--g)">${r.name}</b>: ${r.active.toLocaleString()} active / ${r.received.toLocaleString()} received | ext:${r.totalExt.toLocaleString()} int:${r.totalInt.toLocaleString()}</div>`;
+  }
+  if(bgp.peers.length){
+    h+='<div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>PEER</th><th>AS</th><th class="c">STATE</th><th class="r">RCV/ACC</th><th class="r">MSG I/O</th></tr></thead><tbody>';
+    for(const p of bgp.peers){
+      const up=p.state==='Established';
+      const pfxRcv=p.rib.reduce((s,r)=>s+r.received,0);
+      const pfxAcc=p.rib.reduce((s,r)=>s+r.accepted,0);
+      h+=`<tr><td style="color:${up?'var(--g)':'var(--red)'}">${p.address}</td><td style="color:var(--g3)">${p.as}</td><td class="c">${dot(up,!up)}</td><td class="r"><b>${pfxRcv.toLocaleString()}</b><span style="color:var(--gdim)">/${pfxAcc.toLocaleString()}</span></td><td class="r" style="font-size:7px;color:var(--g3)">${p.inputMessages.toLocaleString()}/${p.outputMessages.toLocaleString()}</td></tr>`;
+    }
+    h+='</tbody></table></div>';
+  }
+  h+=`<div style="margin-top:3px;font-size:7px;color:var(--g3);text-align:center">${bgp.groupCount} GROUPS | ${bgp.peerCount} PEERS | ${bgp.ribs.reduce((s,r)=>s+r.totalPfx,0).toLocaleString()} TOTAL PFX</div>`;
+  h+='</div></div>';
+
+  // Event Log
+  const logCls=logs.some(l=>l.severity<=4)?'panel warning':'panel';
+  h+=`<div class="${logCls}"><div class="panel-title">EVENT LOG</div><div class="panel-body"><div style="display:flex;gap:6px;margin-bottom:4px"><span class="tab ${logFilter==='all'?'active':''}" onclick="logFilter='all';render(currentData)">ALL</span><span class="tab ${logFilter==='warn'?'active':''}" onclick="logFilter='warn';render(currentData)">WARN+</span><span class="tab ${logFilter==='config'?'active':''}" onclick="logFilter='config';render(currentData)">CONFIG</span><span style="font-size:7px;color:var(--gdim);margin-left:auto">${filteredLogs.length} entries</span></div><div class="scroll" style="max-height:180px">`;
+  for(const l of filteredLogs){
+    const col=SEV_COLOR[l.severity]||'var(--g2)';
+    const sc=srcColor(l.source);
+    h+=`<div class="log-entry"><span class="log-ts">${l.timestamp||''}</span><span class="log-sev" style="color:${col}">${SEV_LABEL[l.severity]||l.severity}</span><span style="word-break:break-all"><span class="log-src" style="color:${sc}">${l.source}:</span> <span style="color:var(--g2)">${l.message}</span></span></div>`;
+  }
+  if(!filteredLogs.length) h+='<div style="color:var(--g3);text-align:center;padding:8px">NO LOG ENTRIES</div>';
+  h+='</div></div></div>';
+
+  // Active Interfaces
+  h+=`<div class="panel"><div class="panel-title">ACTIVE INTERFACES (${activeIntf.length})</div><div class="panel-body"><div class="scroll" style="max-height:200px"><table class="tbl"><thead><tr><th>PORT</th><th>DESCRIPTION</th><th class="r">SPEED</th><th class="c">STATUS</th></tr></thead><tbody>`;
+  for(const i of activeIntf){
+    h+=`<tr><td>${dot(true,false)}<b>${i.name}</b></td><td style="color:var(--g3);font-size:7px;max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${i.description||''}</td><td class="r" style="color:var(--g2)">${i.speed||'---'}</td><td class="c" style="font-size:7px">${i.adminStatus}/${i.operStatus}</td></tr>`;
+  }
+  h+='</tbody></table></div></div></div>';
+
+  // Port Summary
+  h+=`<div class="panel"><div class="panel-title">PORT SUMMARY</div><div class="panel-body"><div style="display:flex;gap:12px;justify-content:center"><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g)">${activeIntf.length}</div><div class="lbl">ACTIVE</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--gdim)">${downIntf.length}</div><div class="lbl">DOWN</div></div><div style="text-align:center"><div class="val" style="font-size:14px;color:var(--g2)">${opticsWithTemp.length}</div><div class="lbl">OPTICS</div></div></div></div></div>`;
+
+  h+='</div>'; // right col
+  h+='</div>'; // grid
+
+  // FOOTER
+  const totalPfx=bgp.ribs.reduce((s,r)=>s+r.totalPfx,0);
+  h+=`<div class="footer"><span>POLL:${meta.poll_count||0} | ${meta.poll_time||'---'}s | RE0:${re0.temp||'--'}C/${re0.cpuTemp||'--'}C | LOAD:${re0.loadAvg1||'---'}</span><span style="animation:pulse 2s infinite">${dot(true,false)} TELEMETRY ${meta.error?'<span style="color:var(--amber)">DEGRADED</span>':'ACTIVE'}</span><span>${bgp.peerCount} BGP | ${ospf.length} OSPF | ${activeIntf.length} PORTS | ${totalPfx.toLocaleString()} PFX</span></div>`;
+
+  document.getElementById('app').innerHTML=h;
+}
+/* SSH Terminal (xterm.js) */
+const TerminalMgr={
+  _term:null,_fitAddon:null,_ws:null,_open:false,
+  toggle(){this._open?this.close():this.open()},
+  open(){
+    document.getElementById('term-overlay').classList.add('open');
+    document.getElementById('term-fab').classList.add('active');
+    this._open=true;
+    if(!this._term){
+      const isA=Theme.current()==='amber';
+      this._term=new window.Terminal({cursorBlink:true,fontSize:13,fontFamily:"'Courier New','Lucida Console',monospace",theme:this._getTheme(),scrollback:5000});
+      this._fitAddon=new window.FitAddon.FitAddon();
+      this._term.loadAddon(this._fitAddon);
+      this._term.open(document.getElementById('term-body'));
+      this._fitAddon.fit();
+      this._ro=new ResizeObserver(()=>{if(this._fitAddon&&this._open){this._fitAddon.fit();if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}))}});
+      this._ro.observe(document.getElementById('term-body'));
+    }else{this._term.options.theme=this._getTheme();setTimeout(()=>this._fitAddon.fit(),50)}
+    if(!this._ws||this._ws.readyState!==WebSocket.OPEN)this._connect();
+  },
+  close(){document.getElementById('term-overlay').classList.remove('open');document.getElementById('term-fab').classList.remove('active');this._open=false},
+  reconnect(){if(this._ws)try{this._ws.close()}catch(e){}if(this._term)this._term.clear();this._connect()},
+  _getTheme(){const a=Theme.current()==='amber';return{background:a?'#0a0800':'#080a08',foreground:a?'#ff9500':'#00ff41',cursor:a?'#ff9500':'#00ff41',selectionBackground:a?'rgba(255,149,0,0.25)':'rgba(0,255,65,0.25)'}},
+  _connect(){
+    const st=document.getElementById('term-status');st.textContent='CONNECTING...';
+    this._ws=new WebSocket(`${WS_BASE}/ws/terminal${_sessionId?'?session='+_sessionId:''}`);
+    this._ws.binaryType='arraybuffer';
+    this._ws.onopen=()=>{st.textContent='CONNECTED';this._ws.send(JSON.stringify({cols:this._term.cols,rows:this._term.rows}))};
+    this._ws.onmessage=(e)=>{e.data instanceof ArrayBuffer?this._term.write(new Uint8Array(e.data)):this._term.write(e.data)};
+    this._ws.onclose=()=>{st.textContent='DISCONNECTED'};
+    this._ws.onerror=()=>{st.textContent='CONNECTION ERROR'};
+    this._term.onData((data)=>{if(this._ws&&this._ws.readyState===WebSocket.OPEN)this._ws.send(data)});
+  }
+};
+
+  /* ==============================================================
+     MODULE: LOGIN MODAL
+     ============================================================== */
+  let _connectHost = null;  // fallback hostname from /api/connect
+
+  const LoginModal = {
+    overlay: null,
+
+    async init() {
+      this.overlay = document.getElementById('loginOverlay');
+      const params = new URLSearchParams(window.location.search);
+
+      // Attach to a session a host process already established (nhd desktop
+      // POSTs /api/connect itself so key material never rides the URL). The
+      // resume path below validates this id via /api/status and attaches.
+      const _urlSession = params.get('session');
+      if (_urlSession) _setSession(_urlSession);
+
+      let defaults = {};
+      try {
+        const r = await fetch('/api/defaults');
+        if (r.ok) defaults = await r.json();
+      } catch(e) {}
+
+      const val = (key, fb='') => params.get(key) || defaults[key] || fb;
+      document.getElementById('lf-host').value    = val('host');
+      document.getElementById('lf-user').value    = val('username');
+      document.getElementById('lf-pass').value    = params.get('password') || '';
+      document.getElementById('lf-dtype').value   = val('device_type', 'juniper_junos');
+      const _DTYPE_LABELS = {arista_eos:'ARISTA EOS',juniper_junos:'JUNIPER JUNOS',cisco_ios:'CISCO IOS',cisco_xe:'CISCO IOS-XE',cisco_nxos:'CISCO NX-OS',linux:'LINUX'};
+      {
+        const _dt = document.getElementById('lf-dtype').value;
+        const _hl = document.getElementById('lf-hud-label');
+        if (_hl) _hl.textContent = (_DTYPE_LABELS[_dt] || (_dt||'').toUpperCase()) + ' HUD';
+      }
+      // AUTH METHOD: device_type is locked to this server's vendor above
+      // (override only via ?device_type= in the URL). The modal picks password
+      // or SSH key and shows just that field.
+      const _useKeys = params.get('auth')
+        ? (params.get('auth') === 'key')
+        : ((params.get('use_keys') || String(defaults.use_keys)) === 'true');
+      document.getElementById('lf-auth').value = _useKeys ? 'key' : 'password';
+      const _applyAuthMode = () => {
+        const mode = document.getElementById('lf-auth').value;
+        const pL = document.getElementById('lf-pass').closest('label');
+        const kL = document.getElementById('lf-keyfile').closest('label');
+        if (pL) {
+          pL.style.display = mode === 'password' ? '' : 'none';
+          if (pL.parentElement) pL.parentElement.style.gridTemplateColumns = mode === 'password' ? '1fr 1fr' : '1fr';
+        }
+        if (kL) {
+          kL.style.display = mode === 'key' ? '' : 'none';
+          if (kL.parentElement) kL.parentElement.style.gridTemplateColumns = mode === 'key' ? '1fr 1fr' : '1fr';
+        }
+      };
+      _applyAuthMode();
+      document.getElementById('lf-auth').addEventListener('change', _applyAuthMode);
+      document.getElementById('lf-legacy').checked = (params.get('legacy_ssh') || String(defaults.legacy_ssh)) === 'true';
+
+      document.getElementById('loginClose').onclick = () => this.dismiss();
+      document.getElementById('loginFields').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') this.connect();
+      });
+
+      if (params.get('host') && params.get('autoconnect') === 'true') {
+        this.connect();
+        return;
+      }
+
+      // Resume existing session from sessionStorage (page reload)
+      if (_sessionId) {
+        try {
+          const sr = await fetch(`/api/status?session=${_sessionId}`);
+          const sd = await sr.json();
+          if (sd.hostname && sd.hostname !== 'not connected') {
+            console.log('Resuming session', _sessionId.slice(0,8), 'to', sd.hostname);
+            _connectHost = sd.hostname;
+            const shortHost = sd.hostname.split('.')[0].toUpperCase();
+            document.title = `${shortHost} — HUD`;
+            this.dismiss();
+            return;
+          }
+        } catch(e) {}
+        // Session is gone — clear it
+        _setSession(null);
+      }
+
+      if (!params.get('host') && !params.get('username')) {
+        this.overlay.style.display = 'flex';
+        return;
+      }
+
+      this.overlay.style.display = 'flex';
+    },
+
+    async connect() {
+      const btn = document.getElementById('loginBtn');
+      const status = document.getElementById('loginStatus');
+      btn.disabled = true;
+      btn.textContent = '⟳ CONNECTING...';
+      status.style.color = '#00ff41';
+      status.textContent = 'Establishing SSH session...';
+
+      const body = {
+        host:        document.getElementById('lf-host').value.trim(),
+        username:    document.getElementById('lf-user').value.trim(),
+        device_type: document.getElementById('lf-dtype').value,
+        legacy_ssh:  document.getElementById('lf-legacy').checked,
+      };
+      const _authMode = document.getElementById('lf-auth').value;
+      if (_authMode === 'password') {
+        const pass = document.getElementById('lf-pass').value;
+        if (pass) body.password = pass;
+      } else {
+        const keyInput = document.getElementById('lf-keyfile');
+        if (keyInput.files && keyInput.files.length > 0) {
+          body.key_text = await keyInput.files[0].text();
+        }
+      }
+
+      if (!body.host) {
+        status.style.color = '#ffaa00';
+        status.textContent = 'Host is required';
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+        return;
+      }
+
+      try {
+        if (_sessionId) body.session_id = _sessionId;
+        const r = await fetch('/api/connect', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(body),
+        });
+        const data = await r.json();
+
+        if (data.status === 'ok') {
+          _setSession(data.session_id);
+          status.textContent = `Connected to ${data.host}`;
+          _connectHost = data.host;
+          const shortHost = data.host.split('.')[0].toUpperCase();
+<!--          document.title = `${shortHost} — HUD`;-->
+
+          // Show loading overlay immediately
+          let lo = document.getElementById('load-overlay');
+          if (lo) {
+            lo.style.display = 'flex';
+          } else {
+            lo = document.createElement('div');
+            lo.className = 'load-overlay';
+            lo.id = 'load-overlay';
+            lo.innerHTML = '<div class="load-title">INITIALIZING TELEMETRY</div><div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div><div class="load-cmd" id="load-cmd">CONNECTING...</div><div class="load-elapsed" id="load-elapsed"></div><div class="load-steps" id="load-steps"></div>';
+            document.body.prepend(lo);
+          }
+
+          // Connect WS now so progress messages are received
+          connect();
+
+          // Dismiss modal after brief flash
+          setTimeout(() => {
+            if (this.overlay) this.overlay.style.display = 'none';
+          }, 300);
+        } else {
+          status.style.color = '#ff3333';
+          status.textContent = data.message || 'Connection failed';
+          btn.disabled = false;
+          btn.textContent = '▶ CONNECT';
+        }
+      } catch(e) {
+        status.style.color = '#ff3333';
+        status.textContent = `Error: ${e.message}`;
+        btn.disabled = false;
+        btn.textContent = '▶ CONNECT';
+      }
+    },
+
+    dismiss() {
+      if (this.overlay) this.overlay.style.display = 'none';
+      if (window.location.search) {
+        history.replaceState(null, '', window.location.pathname);
+      }
+      if (!ws || ws.readyState > WebSocket.OPEN) connect();
+    },
+  };
+
+LoginModal.init();
+  const params = new URLSearchParams(location.search);
+const devName = params.get('name');
+if(devName) document.title = `${devName} — HUD`;
+</script>
+</body>
+</html>

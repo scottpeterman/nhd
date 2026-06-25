@@ -1,0 +1,68 @@
+# HUD Launcher Configuration
+# Servers: the 4 vendor HUD server instances
+# Devices: connection bookmarks that open in the appropriate server
+
+servers:
+  arista:
+    port: 8470
+    module: nethuds.arista.server
+    label: ARISTA EOS
+
+  juniper:
+    port: 8471
+    module: nethuds.juniper.server
+    label: JUNIPER JUNOS
+
+  cisco:
+    port: 8472
+    module: nethuds.cisco_ios.server
+    label: CISCO IOS
+
+  linux:
+    port: 8478
+    module: nethuds.linux.server
+    label: LINUX
+
+devices:
+  - name: CORE1
+    host: 172.16.1.2
+    username: cisco
+    device_type: arista_eos
+    group: lab1
+
+  - name: CORE2
+    host: 172.16.1.3
+    username: cisco
+    device_type: arista_eos
+    group: lab1
+
+  - name: BORDER1
+    host: 172.17.1.10
+    username: cisco
+    device_type: juniper_junos
+    group: lab1
+    legacy_ssh: true
+
+  - name: SPINE1
+    host: 172.17.1.20
+    username: cisco
+    device_type: juniper_junos
+    group: lab1
+
+  - name: SPINE2
+    host: 172.17.1.21
+    username: cisco
+    device_type: juniper_junos
+    group: lab1
+
+  - name: TOR2
+    host: 172.17.202.2
+    username: cisco
+    device_type: cisco_ios
+    group: lab1
+
+  - name: ThinkStation
+    host: 10.0.0.108
+    username: speterman
+    device_type: linux
+    group: LAB

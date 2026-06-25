@@ -1,0 +1,38 @@
+# nethuds desktop (nhd) — runtime dependencies
+#
+# This is a requirements file, not a lockfile: it lists only the packages nhd
+# and its vendored HUD servers import *directly*, with lower bounds at the
+# versions it has been tested against. Everything else those packages need
+# (starlette, websockets, textfsm, ntc_templates, scp, pyserial, bcrypt,
+# PyNaCl, anyio, h11, …) is resolved transitively — don't list it here.
+#
+# For a byte-for-byte reproducible environment, install against the pinned set:
+#     pip install -r requirements.txt -c constraints.txt
+# where constraints.txt is `pip freeze` from a known-good venv.
+
+# --- GUI shell -------------------------------------------------------------
+PyQt6>=6.6
+PyQt6-WebEngine>=6.6          # QWebEngineView — the host for each HUD page
+
+# --- vendor HUD servers (FastAPI apps, run in-process or per-subprocess) ----
+fastapi>=0.110
+uvicorn[standard]>=0.27       # [standard] pulls in websockets, which the HUD
+                              # telemetry + terminal sockets require
+httpx>=0.27                   # used by nethuds' own launcher path
+
+# --- SSH + device I/O ------------------------------------------------------
+paramiko>=4.0,<5              # SSH transport. Pinned to the 4.x line on purpose:
+                              # paramiko 5 drops legacy KEX / host-key algorithms
+                              # that IOSv-era gear still needs (see legacy_ssh on
+                              # a session). netmiko already caps paramiko<5.0,
+                              # so this is belt-and-suspenders + documented intent.
+                              # NOTE: paramiko<=4.0 would be wrong — it freezes at
+                              # exactly 4.0.0 and blocks 4.0.x / 4.1 fixes.
+netmiko>=4.3                  # device_type taxonomy that selects the HUD;
+                              # brings textfsm, ntc_templates, scp, pyserial.
+                              # Left uncapped: the paramiko<5 pin above stands on
+                              # its own, so pip enforces it whatever netmiko allows.
+
+# --- credential vault + config ---------------------------------------------
+cryptography>=42.0            # Fernet + PBKDF2-HMAC-SHA256 for the vault
+PyYAML>=6.0                   # session files, devices.yaml, vendor configs

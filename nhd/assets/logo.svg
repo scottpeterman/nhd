@@ -1,0 +1,135 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 864 718" font-family="'DejaVu Sans Mono','Courier New',monospace">
+<defs>
+  <radialGradient id="bg" cx="50%" cy="50%" r="75%">
+    <stop offset="0%" stop-color="#0d2017"/>
+    <stop offset="55%" stop-color="#081710"/>
+    <stop offset="100%" stop-color="#040c08"/>
+  </radialGradient>
+  <linearGradient id="beam" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#46ff7a" stop-opacity="0.55"/>
+    <stop offset="35%" stop-color="#39e86a" stop-opacity="0.22"/>
+    <stop offset="100%" stop-color="#1c8f44" stop-opacity="0"/>
+  </linearGradient>
+  <linearGradient id="streak" x1="0" y1="0" x2="1" y2="0">
+    <stop offset="0%" stop-color="#7dffa6" stop-opacity="0.95"/>
+    <stop offset="60%" stop-color="#3dff6e" stop-opacity="0.5"/>
+    <stop offset="100%" stop-color="#3dff6e" stop-opacity="0"/>
+  </linearGradient>
+  <filter id="soft" x="-60%" y="-60%" width="220%" height="220%">
+    <feGaussianBlur stdDeviation="3.2"/>
+  </filter>
+  <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
+    <feGaussianBlur stdDeviation="5.5" result="b"/>
+    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
+  </filter>
+</defs>
+<rect width="864" height="718" fill="url(#bg)"/>
+<g stroke="#10301f" stroke-width="1" opacity="0.45">
+<line x1="0" y1="0" x2="0" y2="718"/>
+<line x1="48" y1="0" x2="48" y2="718"/>
+<line x1="96" y1="0" x2="96" y2="718"/>
+<line x1="144" y1="0" x2="144" y2="718"/>
+<line x1="192" y1="0" x2="192" y2="718"/>
+<line x1="240" y1="0" x2="240" y2="718"/>
+<line x1="288" y1="0" x2="288" y2="718"/>
+<line x1="336" y1="0" x2="336" y2="718"/>
+<line x1="384" y1="0" x2="384" y2="718"/>
+<line x1="432" y1="0" x2="432" y2="718"/>
+<line x1="480" y1="0" x2="480" y2="718"/>
+<line x1="528" y1="0" x2="528" y2="718"/>
+<line x1="576" y1="0" x2="576" y2="718"/>
+<line x1="624" y1="0" x2="624" y2="718"/>
+<line x1="672" y1="0" x2="672" y2="718"/>
+<line x1="720" y1="0" x2="720" y2="718"/>
+<line x1="768" y1="0" x2="768" y2="718"/>
+<line x1="816" y1="0" x2="816" y2="718"/>
+<line x1="864" y1="0" x2="864" y2="718"/>
+<line x1="0" y1="0" x2="864" y2="0"/>
+<line x1="0" y1="48" x2="864" y2="48"/>
+<line x1="0" y1="96" x2="864" y2="96"/>
+<line x1="0" y1="144" x2="864" y2="144"/>
+<line x1="0" y1="192" x2="864" y2="192"/>
+<line x1="0" y1="240" x2="864" y2="240"/>
+<line x1="0" y1="288" x2="864" y2="288"/>
+<line x1="0" y1="336" x2="864" y2="336"/>
+<line x1="0" y1="384" x2="864" y2="384"/>
+<line x1="0" y1="432" x2="864" y2="432"/>
+<line x1="0" y1="480" x2="864" y2="480"/>
+<line x1="0" y1="528" x2="864" y2="528"/>
+<line x1="0" y1="576" x2="864" y2="576"/>
+<line x1="0" y1="624" x2="864" y2="624"/>
+<line x1="0" y1="672" x2="864" y2="672"/>
+</g>
+<g stroke="#1c5536" stroke-width="1" opacity="0.55"><line x1="0" y1="372" x2="864" y2="372"/><line x1="432" y1="0" x2="432" y2="718"/></g>
+<circle cx="432" cy="372" r="120" fill="none" stroke="#2a8552" stroke-width="1.2" stroke-dasharray="3 7" opacity="0.3"/>
+<circle cx="432" cy="372" r="200" fill="none" stroke="#2a8552" stroke-width="1.2" stroke-dasharray="3 7" opacity="0.4"/>
+<circle cx="432" cy="372" r="300" fill="none" stroke="#2a8552" stroke-width="1.2" stroke-dasharray="3 7" opacity="0.5"/>
+<polygon points="432,372 898.5,314.7 870.8,203.6" fill="url(#beam)" filter="url(#soft)"/>
+<line x1="432" y1="372" x2="898.5" y2="314.7" stroke="url(#streak)" stroke-width="3" filter="url(#soft)"/>
+<g stroke="#1d6c43" stroke-width="1" opacity="0.55">
+<line x1="432" y1="372" x2="432.0" y2="92.0"/>
+<line x1="432" y1="372" x2="527.8" y2="108.9"/>
+<line x1="432" y1="372" x2="612.0" y2="157.5"/>
+<line x1="432" y1="372" x2="674.5" y2="232.0"/>
+<line x1="432" y1="372" x2="707.7" y2="323.4"/>
+<line x1="432" y1="372" x2="707.7" y2="420.6"/>
+<line x1="432" y1="372" x2="674.5" y2="512.0"/>
+<line x1="432" y1="372" x2="612.0" y2="586.5"/>
+<line x1="432" y1="372" x2="527.8" y2="635.1"/>
+<line x1="432" y1="372" x2="432.0" y2="652.0"/>
+<line x1="432" y1="372" x2="336.2" y2="635.1"/>
+<line x1="432" y1="372" x2="252.0" y2="586.5"/>
+<line x1="432" y1="372" x2="189.5" y2="512.0"/>
+<line x1="432" y1="372" x2="156.3" y2="420.6"/>
+<line x1="432" y1="372" x2="156.3" y2="323.4"/>
+<line x1="432" y1="372" x2="189.5" y2="232.0"/>
+<line x1="432" y1="372" x2="252.0" y2="157.5"/>
+<line x1="432" y1="372" x2="336.2" y2="108.9"/>
+</g>
+<g stroke="#22c6cf" stroke-width="2.4" opacity="0.7">
+<line x1="432" y1="372" x2="432.0" y2="222.0"/>
+<line x1="432" y1="372" x2="289.5" y2="283.0"/>
+</g>
+<circle cx="432.0" cy="92.0" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="432.0" y="72.0" fill="#74d796" font-size="15" text-anchor="middle">ax01</text>
+<circle cx="527.8" cy="108.9" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="527.8" y="88.9" fill="#74d796" font-size="15" text-anchor="middle">ax02</text>
+<circle cx="612.0" cy="157.5" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="634.0" y="137.5" fill="#74d796" font-size="15" text-anchor="start">ax03</text>
+<circle cx="674.5" cy="232.0" r="13" fill="#0a1c12" stroke="#1e5e3a" stroke-width="2.4"/>
+<text x="696.5" y="212.0" fill="#3f8a5e" font-size="15" text-anchor="start">oob1</text>
+<circle cx="707.7" cy="323.4" r="13" fill="#0a1c12" stroke="#1e5e3a" stroke-width="2.4"/>
+<text x="729.7" y="328.4" fill="#3f8a5e" font-size="15" text-anchor="start">ax04</text>
+<circle cx="707.7" cy="420.6" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="729.7" y="425.6" fill="#74d796" font-size="15" text-anchor="start">ax05</text>
+<circle cx="674.5" cy="512.0" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="696.5" y="540.0" fill="#74d796" font-size="15" text-anchor="start">sp01</text>
+<circle cx="612.0" cy="586.5" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="634.0" y="614.5" fill="#74d796" font-size="15" text-anchor="start">ax06</text>
+<circle cx="527.8" cy="635.1" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="527.8" y="663.1" fill="#74d796" font-size="15" text-anchor="middle">ax07</text>
+<circle cx="432.0" cy="652.0" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="432.0" y="680.0" fill="#74d796" font-size="15" text-anchor="middle">ax08</text>
+<circle cx="336.2" cy="635.1" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="336.2" y="663.1" fill="#74d796" font-size="15" text-anchor="middle">ax09</text>
+<circle cx="252.0" cy="586.5" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="230.0" y="614.5" fill="#74d796" font-size="15" text-anchor="end">sp02</text>
+<circle cx="189.5" cy="512.0" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="167.5" y="540.0" fill="#74d796" font-size="15" text-anchor="end">ax10</text>
+<circle cx="156.3" cy="420.6" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="134.3" y="425.6" fill="#74d796" font-size="15" text-anchor="end">ax11</text>
+<circle cx="156.3" cy="323.4" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="134.3" y="328.4" fill="#74d796" font-size="15" text-anchor="end">ax12</text>
+<circle cx="189.5" cy="232.0" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="167.5" y="212.0" fill="#74d796" font-size="15" text-anchor="end">sp03</text>
+<circle cx="252.0" cy="157.5" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="230.0" y="137.5" fill="#74d796" font-size="15" text-anchor="end">ax13</text>
+<circle cx="336.2" cy="108.9" r="13" fill="#08160e" stroke="#37d65d" stroke-width="2.4"/>
+<text x="336.2" y="88.9" fill="#74d796" font-size="15" text-anchor="middle">ax14</text>
+<rect x="373.0" y="202.0" width="118" height="40" rx="6" fill="#06231f" stroke="#23e6e6" stroke-width="2.6"/>
+<text x="432.0" y="227.0" fill="#62f0f0" font-size="18" font-weight="bold" text-anchor="middle" letter-spacing="1">agg01</text>
+<rect x="230.5" y="263.0" width="118" height="40" rx="6" fill="#06231f" stroke="#23e6e6" stroke-width="2.6"/>
+<text x="289.5" y="288.0" fill="#62f0f0" font-size="18" font-weight="bold" text-anchor="middle" letter-spacing="1">agg02</text>
+<rect x="354.0" y="343.0" width="156" height="58" rx="9" fill="#0a2417" stroke="#3aff63" stroke-width="3" filter="url(#glow)"/>
+<text x="432" y="379" fill="#7dffa0" font-size="24" font-weight="bold" text-anchor="middle" letter-spacing="2">core01</text>
+</svg>
