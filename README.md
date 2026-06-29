@@ -20,7 +20,8 @@ something even on a box you've never met.
 
 Around that core it adds the chrome a server-only HUD lacks: an **editable,
 filterable** session tree, an encrypted credential vault with a full management
-UI, key-based SSH auth, zoomable tabbed multi-device views, a dark UI, and window
+UI, key-based SSH auth, zoomable tabbed multi-device views, a split **cockpit
+layout** that docks the SSH terminal beside the live HUD, a dark UI, and window
 state that persists across restarts — all without rewriting the
 [nethuds](https://pypi.org/project/nethuds/) HUD pages.
 
@@ -324,6 +325,28 @@ scale-factor rounding policy to `PassThrough` so fractional display scales
 rounding to the nearest integer. On macOS Retina (integer 2×) none of this is
 needed; it's there for the mixed-DPI desktops the tool also runs on.
 
+**Cockpit layout.** Every HUD has two layouts, switched live by the circular
+button at the bottom-right of the page (stacked just above the terminal
+launcher) or with **Ctrl/Cmd+Shift+L**. The default **HUD** layout is the
+full-width telemetry dashboard with the SSH terminal as a floating, draggable
+overlay. The **split** ("cockpit") layout docks that same terminal as a 2/3
+left pane and restacks the telemetry into a scrollable 1/3 column on the right —
+so a live `btop` or `show` session and the device's health sit side by side,
+both fed by the one SSH connection. The choice is per-page and persists in
+`localStorage` (`hud-layout`, mirroring the green/amber theme toggle), so a HUD
+reopens in whichever layout you left it.
+
+<p align="center">
+  <img src="https://raw.githubusercontent.com/scottpeterman/nhd/main/screenshots/alt_layout.png"
+       alt="Cockpit layout — the SSH terminal docked beside the live telemetry column"
+       width="100%">
+  <br>
+  <em>The cockpit (split) layout: the SSH terminal docked as the left pane with
+  the telemetry HUD restacked into a scrollable column on the right — here
+  <code>btop</code> against connections, services, Docker and the event log,
+  all from one SSH session.</em>
+</p>
+
 ## Layout
 
 ```
@@ -353,6 +376,15 @@ to a wrapper-established session. The Linux page is unchanged. The Linux
 returns (like the session vendors already did), so a bad login is reported to
 the caller instead of failing silently inside the poll loop. Since you own
 nethuds, both are clean upstream changes to make there and re-vendor.
+
+All four pages also carry one self-contained block — `<!-- NHD COCKPIT LAYOUT -->`,
+holding the split-layout CSS, its toggle button, and the small amount of JS that
+docks the terminal. It's namespaced entirely under `#nhd-…` IDs and a
+`data-layout` body attribute, touches nothing the HUD already owns, and is
+marked safe to remove wholesale. It currently lives as a near-identical copy in
+each vendor page (so a per-vendor theme-variable drift can bite one and not the
+others); folding it into a single shared static asset is a clean re-vendor
+candidate.
 
 ## Install & run
 

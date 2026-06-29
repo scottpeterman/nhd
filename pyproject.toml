@@ -1,0 +1,70 @@
+[build-system]
+requires = ["setuptools>=77.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "nhd"
+version = "0.1.4"
+description = "nethuds desktop — a single-HUD SSH triage cockpit for Arista, Juniper, Cisco IOS, and Linux"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "GPL-3.0-or-later"
+license-files = ["LICENSE"]
+authors = [{ name = "Scott Peterman" }]
+keywords = [
+    "network", "netops", "ssh", "telemetry", "hud", "bgp",
+    "arista", "juniper", "cisco", "observability",
+]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: Qt",
+    "Intended Audience :: System Administrators",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: System :: Networking :: Monitoring",
+    "Topic :: System :: Systems Administration",
+]
+dependencies = [
+    "PyQt6>=6.6",
+    "PyQt6-WebEngine>=6.6",
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "httpx>=0.27",
+    "paramiko>=3.4",
+    "netmiko>=4.3",
+    "cryptography>=42.0",
+    "PyYAML>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/scottpeterman/nhd"
+Repository = "https://github.com/scottpeterman/nhd"
+Issues = "https://github.com/scottpeterman/nhd/issues"
+
+[project.scripts]
+nhd = "nhd.app:main"
+nhd-vaultctl = "nhd.vaultctl:main"
+
+[tool.setuptools]
+# Be explicit: the wheel ships ONLY what packages.find + package-data below declare.
+# No silent inclusion from MANIFEST.in / VCS into the wheel.
+include-package-data = false
+
+[tool.setuptools.packages.find]
+include = ["nhd", "nhd.*"]
+namespaces = false
+
+# Non-.py files that must ride along inside the wheel. Globs are relative to each
+# package directory and may descend into non-package subdirs (e.g. static/).
+[tool.setuptools.package-data]
+"nhd" = ["assets/*"]
+"nhd.nethuds" = ["*.json", "*.yaml", "static/*"]
+"nhd.nethuds.arista" = ["*.yaml", "static/*"]
+"nhd.nethuds.cisco_ios" = ["*.yaml", "static/*"]
+"nhd.nethuds.juniper" = ["*.yaml", "*.md", "static/*"]
+"nhd.nethuds.linux" = ["*.yaml", "*.md", "static/*"]
